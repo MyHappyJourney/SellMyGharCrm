@@ -1,0 +1,6 @@
+{
+  "name": "Prestige Owner CRM – SellMyGhar",
+  "description": "Production-ready real estate CRM for Prestige property owners in Bengaluru to qualify sale & rental pipelines, manage listings, match buyers/tenants, and track brokerage revenue.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
