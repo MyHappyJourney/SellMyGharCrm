@@ -662,9 +662,9 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       propertyType: (ownerData.propertyType as any) || 'Apartment',
       bhk: ownerData.bhk || '3 BHK',
       superBuiltUpAreaSqFt: ownerData.superBuiltUpArea || 1500,
-      carpetAreaSqFt: ownerData.carpetArea || 1200,
-      carParking: 1,
-      furnishingStatus: ownerData.furnishing || 'Semi-Furnished',
+      carpetAreaSqFt: Math.round((ownerData.superBuiltUpArea || 1500) * 0.78),
+      carParking: ownerData.carParking || 1,
+      furnishingStatus: (ownerData.furnishingStatus as any) || 'Semi-Furnished',
       propertyStatus: ownerData.propertyStatus || 'Unknown',
       photos: [],
       isVerified: true
@@ -681,8 +681,8 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         propertyId: newProperty.id,
         stage: 'Interested',
         expectedPrice: ownerData.saleInfo?.expectedPrice || 20000000,
-        exclusiveMandate: ownerData.saleInfo?.exclusiveMandate || false,
-        timeline: ownerData.saleIntent,
+        leadScore: scoreResult.score,
+        leadTemperature: scoreResult.temperature,
         assignedAgent: ownerData.assignedStaff || currentUser.name,
         createdAt: now,
         updatedAt: now
@@ -696,11 +696,11 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: `rl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         ownerId: newId,
         propertyId: newProperty.id,
-        stage: 'Rental Requirement Qualified',
-        expectedMonthlyRent: ownerData.rentalInfo?.expectedMonthlyRent || 60000,
-        securityDeposit: ownerData.rentalInfo?.securityDeposit || 300000,
-        timeline: ownerData.rentalIntent,
-        furnishing: ownerData.rentalInfo?.furnishing || 'Semi-Furnished',
+        stage: 'Interested',
+        expectedRent: ownerData.rentalInfo?.expectedMonthlyRent || 60000,
+        deposit: ownerData.rentalInfo?.securityDeposit || 300000,
+        leadScore: scoreResult.score,
+        leadTemperature: scoreResult.temperature,
         assignedAgent: ownerData.assignedStaff || currentUser.name,
         createdAt: now,
         updatedAt: now
@@ -787,7 +787,6 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return prev.map(sl => sl.ownerId === id ? {
             ...sl,
             expectedPrice: qualification.saleInfo?.expectedPrice || sl.expectedPrice,
-            timeline: qualification.saleIntent,
             updatedAt: new Date().toISOString().split('T')[0]
           } : sl);
         } else {
@@ -797,8 +796,8 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             propertyId: id,
             stage: 'Interested',
             expectedPrice: qualification.saleInfo?.expectedPrice || 20000000,
-            exclusiveMandate: qualification.saleInfo?.exclusiveMandate || false,
-            timeline: qualification.saleIntent,
+            leadScore: owner.leadScore || 50,
+            leadTemperature: owner.leadTemperature || 'Warm',
             assignedAgent: owner.assignedStaff || currentUser.name,
             createdAt: new Date().toISOString().split('T')[0],
             updatedAt: new Date().toISOString().split('T')[0]
@@ -814,8 +813,8 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (existing) {
           return prev.map(rl => rl.ownerId === id ? {
             ...rl,
-            expectedMonthlyRent: qualification.rentalInfo?.expectedMonthlyRent || rl.expectedMonthlyRent,
-            timeline: qualification.rentalIntent,
+            expectedRent: qualification.rentalInfo?.expectedMonthlyRent || rl.expectedRent,
+            deposit: qualification.rentalInfo?.securityDeposit || rl.deposit,
             updatedAt: new Date().toISOString().split('T')[0]
           } : rl);
         } else {
@@ -823,11 +822,11 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             id: `rl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
             ownerId: id,
             propertyId: id,
-            stage: 'Rental Requirement Qualified',
-            expectedMonthlyRent: qualification.rentalInfo?.expectedMonthlyRent || 65000,
-            securityDeposit: qualification.rentalInfo?.securityDeposit || 300000,
-            timeline: qualification.rentalIntent,
-            furnishing: qualification.rentalInfo?.furnishing || 'Semi-Furnished',
+            stage: 'Interested',
+            expectedRent: qualification.rentalInfo?.expectedMonthlyRent || 65000,
+            deposit: qualification.rentalInfo?.securityDeposit || 300000,
+            leadScore: owner.leadScore || 50,
+            leadTemperature: owner.leadTemperature || 'Warm',
             assignedAgent: owner.assignedStaff || currentUser.name,
             createdAt: new Date().toISOString().split('T')[0],
             updatedAt: new Date().toISOString().split('T')[0]

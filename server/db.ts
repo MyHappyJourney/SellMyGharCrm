@@ -1,22 +1,29 @@
 import { MongoClient, Db } from 'mongodb';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 let mongoClient: MongoClient | null = null;
 let mongoDb: Db | null = null;
 let isConnecting = false;
 let lastConnectionError: string | null = null;
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+// Determine safe storage directory:
+// On Vercel / AWS Lambda (process.env.VERCEL, process.env.AWS_LAMBDA_FUNCTION_NAME), the filesystem is read-only except /tmp
+const isServerless = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
+const DATA_DIR = isServerless 
+  ? path.join(os.tmpdir(), 'sellmyghar_crm_data')
+  : path.join(process.cwd(), 'data');
+
 const LOCAL_STORE_FILE = path.join(DATA_DIR, 'crm_store.json');
 
-// Ensure local backup directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  try {
+// Ensure local backup directory exists safely
+try {
+  if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-  } catch (e) {
-    console.error('Failed to create data directory:', e);
   }
+} catch (e) {
+  console.warn('[Storage] Notice when creating data directory:', e);
 }
 
 // Initial Empty Structure
@@ -41,7 +48,7 @@ const DEFAULT_EMPTY_STATE = {
   isInitialized: true
 };
 
-const DEFAULT_MONGODB_URI = 'mongodb+srv://blrrealestates_db_user:sxPfgzVhOSscJzgD@sellmyghar.dqwvhhq.mongodb.net/?retryWrites=true&w=majority&appName=Sellmyghar';
+const DEFAULT_MONGODB_URI = 'mongodb+srv://blrrealestates_db_user:sxPfgzVhOSscJzgD@sellmyghar.dqwvhhq.mongodb.net/sellmyghar_crm?retryWrites=true&w=majority&appName=Sellmyghar';
 const DEFAULT_DB_NAME = 'sellmyghar_crm';
 
 let activeMongoUri: string = process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGODB_CONNECTION_STRING || DEFAULT_MONGODB_URI;
@@ -86,7 +93,11 @@ export async function getMongoDb(): Promise<Db | null> {
     const dbName = activeDbName || process.env.MONGODB_DB_NAME || DEFAULT_DB_NAME;
     mongoClient = new MongoClient(uri, {
       serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 10000,
+      connectTimeoutMS: 8000,
+      maxPoolSize: 10,
+      minPoolSize: 0,
+      retryWrites: true,
+      w: 'majority'
     });
 
     await mongoClient.connect();
@@ -106,8 +117,8 @@ export async function getMongoDb(): Promise<Db | null> {
 
     return mongoDb;
   } catch (err: any) {
-    console.error('[MongoDB] Connection error:', err.message);
-    lastConnectionError = err.message;
+    console.error('[MongoDB] Connection error:', err?.message || err);
+    lastConnectionError = err?.message || 'Connection error';
     mongoClient = null;
     mongoDb = null;
     return null;
@@ -140,6 +151,10 @@ export async function testMongoConnection(customUri?: string): Promise<{
     testClient = new MongoClient(uri, {
       serverSelectionTimeoutMS: 6000,
       connectTimeoutMS: 6000,
+      maxPoolSize: 2,
+      minPoolSize: 0,
+      retryWrites: true,
+      w: 'majority'
     });
 
     await testClient.connect();
@@ -159,11 +174,11 @@ export async function testMongoConnection(customUri?: string): Promise<{
       details: 'All CRM records are now persisting directly to your MongoDB cluster in real-time.'
     };
   } catch (err: any) {
-    const errMsg = err.message || String(err);
+    const errMsg = err?.message || String(err);
     let recommendation = 'Unknown connection error. Please verify your connection string.';
 
     if (errMsg.includes('Server selection timed out') || errMsg.includes('ETIMEDOUT') || errMsg.includes('ENOTFOUND')) {
-      recommendation = 'Network Access Blocked: Please log into MongoDB Atlas > "Network Access" and click "Add IP Address" -> Select "Allow Access from Anywhere (0.0.0.0/0)". Cloud Run containers use dynamic IPs and require 0.0.0.0/0.';
+      recommendation = 'Network Access Blocked: Please log into MongoDB Atlas > "Network Access" and click "Add IP Address" -> Select "Allow Access from Anywhere (0.0.0.0/0)". Vercel serverless functions use dynamic IPs that require 0.0.0.0/0.';
     } else if (errMsg.includes('Authentication failed') || errMsg.includes('auth failed') || errMsg.includes('bad auth')) {
       recommendation = 'Authentication Failed: Please check MongoDB Atlas > "Database Access" to ensure your database username and password are correct, and verify special characters in the password are URL-encoded without < > brackets.';
     } else if (errMsg.includes('querySrv') || errMsg.includes('SRV')) {
@@ -187,7 +202,7 @@ export function readLocalStore(): any {
       return JSON.parse(data);
     }
   } catch (err) {
-    console.error('[Local DB] Error reading local store:', err);
+    console.warn('[Local DB] Notice reading local store:', err);
   }
   return { ...DEFAULT_EMPTY_STATE };
 }
@@ -197,7 +212,7 @@ export function writeLocalStore(state: any): void {
   try {
     fs.writeFileSync(LOCAL_STORE_FILE, JSON.stringify(state, null, 2), 'utf-8');
   } catch (err) {
-    console.error('[Local DB] Error writing to local store:', err);
+    console.warn('[Local DB] Notice writing to local store:', err);
   }
 }
 
@@ -251,35 +266,19 @@ export async function getDatabaseStatus(): Promise<{
           auditLogs
         }
       };
-    } catch (e: any) {
-      return {
-        connected: false,
-        type: 'local_persistent',
-        dbName: 'Local Persistent Store (Fallback)',
-        hasMongoUri: !!uri,
-        error: e.message,
-        counts: {
-          owners: 0,
-          properties: 0,
-          saleLeads: 0,
-          rentalLeads: 0,
-          activities: 0,
-          followUps: 0,
-          users: 0,
-          auditLogs: 0
-        }
-      };
+    } catch (err: any) {
+      console.warn('[MongoDB] Query counts notice:', err?.message || err);
     }
   }
 
-  // Local file fallback
+  // Fallback to local store
   const local = readLocalStore();
   return {
     connected: false,
     type: 'local_persistent',
-    dbName: 'Local Disk Store (data/crm_store.json)',
+    dbName: 'Local Persistent Store (Fallback)',
     hasMongoUri: !!uri,
-    error: lastConnectionError || (uri ? 'Connecting to MongoDB Atlas cluster...' : 'MONGODB_URI not configured'),
+    error: lastConnectionError || (uri ? 'Connecting to MongoDB Atlas...' : 'No MONGODB_URI set'),
     counts: {
       owners: local.owners?.length || 0,
       properties: local.properties?.length || 0,
@@ -293,10 +292,10 @@ export async function getDatabaseStatus(): Promise<{
   };
 }
 
-// Load entire CRM state
+// Load complete CRM dataset
 export async function loadAllData(): Promise<any> {
   const db = await getMongoDb();
-  
+
   if (db) {
     try {
       const [
@@ -317,21 +316,21 @@ export async function loadAllData(): Promise<any> {
         auditLogs,
         settingsDoc
       ] = await Promise.all([
-        db.collection('owners').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('properties').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('buyers').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('tenants').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('listings').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('transactions').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('activities').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('followUps').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('saleLeads').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('rentalLeads').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('users').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('roles').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('scoringRules').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('templates').find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection('auditLogs').find({}, { projection: { _id: 0 } }).sort({ timestamp: -1 }).limit(500).toArray(),
+        db.collection('owners').find({}).sort({ updatedAt: -1 }).toArray(),
+        db.collection('properties').find({}).toArray(),
+        db.collection('buyers').find({}).toArray(),
+        db.collection('tenants').find({}).toArray(),
+        db.collection('listings').find({}).toArray(),
+        db.collection('transactions').find({}).toArray(),
+        db.collection('activities').find({}).sort({ timestamp: -1 }).toArray(),
+        db.collection('followUps').find({}).sort({ scheduledDate: 1 }).toArray(),
+        db.collection('saleLeads').find({}).toArray(),
+        db.collection('rentalLeads').find({}).toArray(),
+        db.collection('users').find({}).toArray(),
+        db.collection('roles').find({}).toArray(),
+        db.collection('scoringRules').find({}).toArray(),
+        db.collection('templates').find({}).toArray(),
+        db.collection('auditLogs').find({}).sort({ timestamp: -1 }).limit(200).toArray(),
         db.collection('app_settings').findOne({ _id: 'global_state' as any })
       ]);
 
@@ -423,7 +422,7 @@ export async function syncAllData(state: any): Promise<boolean> {
 
     return true;
   } catch (err: any) {
-    console.error('[MongoDB] Error in syncAllData:', err.message);
+    console.error('[MongoDB] Error in syncAllData:', err?.message || err);
     return false;
   }
 }
