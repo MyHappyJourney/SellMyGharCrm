@@ -30,6 +30,7 @@ import {
   Legend
 } from 'recharts';
 import { useCrm } from '../../context/CrmContext';
+import { MongoStatusBanner } from '../common/MongoStatusBanner';
 
 interface DashboardViewProps {
   onNavigate: (tab: string) => void;
@@ -127,6 +128,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
+      {/* Live MongoDB Connection Status & Diagnostic Banner */}
+      <MongoStatusBanner onOpenSettings={() => onNavigate('settings')} />
+
       {/* 5-Column Executive Stat Cards from Professional Polish Design */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Card 1: Total Owners */}
