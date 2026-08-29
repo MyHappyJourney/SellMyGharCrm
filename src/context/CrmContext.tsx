@@ -650,10 +650,67 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedAt: now
     };
 
+    // Auto-create linked Property record
+    const newProperty: Property = {
+      id: `prop-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      ownerId: newId,
+      builder: 'Prestige Group',
+      project: ownerData.project || 'Prestige Project',
+      city: 'Bengaluru',
+      block: ownerData.block || 'Tower 1',
+      flatNumber: ownerData.flatNumber || 'Unit',
+      propertyType: (ownerData.propertyType as any) || 'Apartment',
+      bhk: ownerData.bhk || '3 BHK',
+      superBuiltUpAreaSqFt: ownerData.superBuiltUpArea || 1500,
+      carpetAreaSqFt: ownerData.carpetArea || 1200,
+      carParking: 1,
+      furnishingStatus: ownerData.furnishing || 'Semi-Furnished',
+      propertyStatus: ownerData.propertyStatus || 'Unknown',
+      photos: [],
+      isVerified: true
+    };
+
     setOwners(prev => [newOwner, ...prev]);
+    setProperties(prev => [newProperty, ...prev]);
+
+    // If sale intent is active, auto-add to sales pipeline
+    if (ownerData.saleIntent && ownerData.saleIntent !== 'Not Interested') {
+      const newSaleLead: SaleLead = {
+        id: `sl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        ownerId: newId,
+        propertyId: newProperty.id,
+        stage: 'Interested',
+        expectedPrice: ownerData.saleInfo?.expectedPrice || 20000000,
+        exclusiveMandate: ownerData.saleInfo?.exclusiveMandate || false,
+        timeline: ownerData.saleIntent,
+        assignedAgent: ownerData.assignedStaff || currentUser.name,
+        createdAt: now,
+        updatedAt: now
+      };
+      setSaleLeads(prev => [newSaleLead, ...prev]);
+    }
+
+    // If rental intent is active, auto-add to rental pipeline
+    if (ownerData.rentalIntent && ownerData.rentalIntent !== 'Not Interested') {
+      const newRentalLead: RentalLead = {
+        id: `rl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        ownerId: newId,
+        propertyId: newProperty.id,
+        stage: 'Rental Requirement Qualified',
+        expectedMonthlyRent: ownerData.rentalInfo?.expectedMonthlyRent || 60000,
+        securityDeposit: ownerData.rentalInfo?.securityDeposit || 300000,
+        timeline: ownerData.rentalIntent,
+        furnishing: ownerData.rentalInfo?.furnishing || 'Semi-Furnished',
+        assignedAgent: ownerData.assignedStaff || currentUser.name,
+        createdAt: now,
+        updatedAt: now
+      };
+      setRentalLeads(prev => [newRentalLead, ...prev]);
+    }
+
     logAudit('Record created', `Created owner record for ${newOwner.name} (${newOwner.project} - ${newOwner.flatNumber})`, newId, 'Owner');
     return newOwner;
-  }, [scoringRules, logAudit]);
+  }, [scoringRules, currentUser, logAudit]);
 
   const updateOwner = useCallback((id: string, updates: Partial<Owner>) => {
     setOwners(prev => prev.map(o => {
@@ -671,6 +728,11 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteOwner = useCallback((id: string) => {
     setOwners(prev => prev.filter(o => o.id !== id));
+    setProperties(prev => prev.filter(p => p.ownerId !== id));
+    setSaleLeads(prev => prev.filter(sl => sl.ownerId !== id));
+    setRentalLeads(prev => prev.filter(rl => rl.ownerId !== id));
+    setActivities(prev => prev.filter(a => a.ownerId !== id));
+    setFollowUps(prev => prev.filter(f => f.ownerId !== id));
     logAudit('Record deleted', `Deleted owner record ${id}`, id, 'Owner');
   }, [logAudit]);
 
@@ -690,6 +752,7 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const bulkDeleteOwners = useCallback((ids: string[]) => {
     setOwners(prev => prev.filter(o => !ids.includes(o.id)));
+    setProperties(prev => prev.filter(p => !ids.includes(p.ownerId)));
     logAudit('Record deleted', `Bulk deleted ${ids.length} owner records`);
   }, [logAudit]);
 
@@ -715,6 +778,64 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     updateOwner(id, updates);
+
+    // Sync pipeline leads
+    if (qualification.saleIntent && qualification.saleIntent !== 'Not Interested') {
+      setSaleLeads(prev => {
+        const existing = prev.find(sl => sl.ownerId === id);
+        if (existing) {
+          return prev.map(sl => sl.ownerId === id ? {
+            ...sl,
+            expectedPrice: qualification.saleInfo?.expectedPrice || sl.expectedPrice,
+            timeline: qualification.saleIntent,
+            updatedAt: new Date().toISOString().split('T')[0]
+          } : sl);
+        } else {
+          const newLead: SaleLead = {
+            id: `sl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            ownerId: id,
+            propertyId: id,
+            stage: 'Interested',
+            expectedPrice: qualification.saleInfo?.expectedPrice || 20000000,
+            exclusiveMandate: qualification.saleInfo?.exclusiveMandate || false,
+            timeline: qualification.saleIntent,
+            assignedAgent: owner.assignedStaff || currentUser.name,
+            createdAt: new Date().toISOString().split('T')[0],
+            updatedAt: new Date().toISOString().split('T')[0]
+          };
+          return [newLead, ...prev];
+        }
+      });
+    }
+
+    if (qualification.rentalIntent && qualification.rentalIntent !== 'Not Interested') {
+      setRentalLeads(prev => {
+        const existing = prev.find(rl => rl.ownerId === id);
+        if (existing) {
+          return prev.map(rl => rl.ownerId === id ? {
+            ...rl,
+            expectedMonthlyRent: qualification.rentalInfo?.expectedMonthlyRent || rl.expectedMonthlyRent,
+            timeline: qualification.rentalIntent,
+            updatedAt: new Date().toISOString().split('T')[0]
+          } : rl);
+        } else {
+          const newLead: RentalLead = {
+            id: `rl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            ownerId: id,
+            propertyId: id,
+            stage: 'Rental Requirement Qualified',
+            expectedMonthlyRent: qualification.rentalInfo?.expectedMonthlyRent || 65000,
+            securityDeposit: qualification.rentalInfo?.securityDeposit || 300000,
+            timeline: qualification.rentalIntent,
+            furnishing: qualification.rentalInfo?.furnishing || 'Semi-Furnished',
+            assignedAgent: owner.assignedStaff || currentUser.name,
+            createdAt: new Date().toISOString().split('T')[0],
+            updatedAt: new Date().toISOString().split('T')[0]
+          };
+          return [newLead, ...prev];
+        }
+      });
+    }
 
     // Also record activity
     const newActivity: Activity = {
