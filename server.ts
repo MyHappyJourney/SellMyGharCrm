@@ -3,6 +3,12 @@ import path from 'path';
 import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
+import { 
+  getDatabaseStatus, 
+  loadAllData, 
+  syncAllData, 
+  clearAllDatabase 
+} from './server/db';
 
 dotenv.config();
 
@@ -31,6 +37,50 @@ async function startServer() {
   // Health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', app: 'Prestige Owner CRM – SellMyGhar' });
+  });
+
+  // Database Endpoint 1: Get Connection & Sync Status
+  app.get('/api/db/status', async (req, res) => {
+    try {
+      const status = await getDatabaseStatus();
+      res.json(status);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to get DB status' });
+    }
+  });
+
+  // Database Endpoint 2: Load complete CRM state from MongoDB / persistent store
+  app.get('/api/db/load-all', async (req, res) => {
+    try {
+      const data = await loadAllData();
+      res.json(data);
+    } catch (err: any) {
+      console.error('Error loading CRM data:', err);
+      res.status(500).json({ error: err.message || 'Failed to load data from database' });
+    }
+  });
+
+  // Database Endpoint 3: Sync & persist complete CRM state
+  app.post('/api/db/sync-all', async (req, res) => {
+    try {
+      const state = req.body;
+      const success = await syncAllData(state);
+      res.json({ success, message: 'CRM state synchronized with database successfully' });
+    } catch (err: any) {
+      console.error('Error syncing CRM data:', err);
+      res.status(500).json({ error: err.message || 'Failed to sync data' });
+    }
+  });
+
+  // Database Endpoint 4: Clear all database records
+  app.post('/api/db/clear', async (req, res) => {
+    try {
+      const success = await clearAllDatabase();
+      res.json({ success, message: 'Database wiped clean to 0 records' });
+    } catch (err: any) {
+      console.error('Error clearing database:', err);
+      res.status(500).json({ error: err.message || 'Failed to clear database' });
+    }
   });
 
   // AI Endpoint 1: Extract intent & data from Call Notes strictly without inferring unstated intents

@@ -18,7 +18,8 @@ import {
   SaleLead,
   RentalLead,
   SalesPipelineStage,
-  RentalPipelineStage
+  RentalPipelineStage,
+  DatabaseStatus
 } from '../types';
 import { 
   DEMO_OWNERS, 
@@ -58,6 +59,13 @@ interface CrmContextType {
   auditLogs: AuditLog[];
   lastImportReport: ImportSummaryReport | null;
   isLoading: boolean;
+
+  // Database & MongoDB Sync Status
+  dbStatus: DatabaseStatus;
+  isDbSyncing: boolean;
+  lastDbSyncTime: string | null;
+  refreshDbStatus: () => Promise<void>;
+  syncToDatabase: (customPayload?: any) => Promise<boolean>;
 
   // Actions
   addOwner: (owner: Omit<Owner, 'id' | 'createdAt' | 'updatedAt'>) => Owner;
@@ -143,6 +151,28 @@ const STORAGE_KEYS = {
 
 export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
+  const [isDbSyncing, setIsDbSyncing] = useState(false);
+  const [lastDbSyncTime, setLastDbSyncTime] = useState<string | null>(null);
+
+  const [dbStatus, setDbStatus] = useState<DatabaseStatus>({
+    connected: false,
+    type: 'local_persistent',
+    dbName: 'Connecting...',
+    hasMongoUri: false,
+    isSyncing: false,
+    lastSyncedAt: null,
+    counts: {
+      owners: 0,
+      properties: 0,
+      saleLeads: 0,
+      rentalLeads: 0,
+      activities: 0,
+      followUps: 0,
+      users: 0,
+      auditLogs: 0
+    }
+  });
+
   const [owners, setOwners] = useState<Owner[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [buyers, setBuyers] = useState<Buyer[]>([]);
@@ -161,92 +191,196 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [lastImportReport, setLastImportReport] = useState<ImportSummaryReport | null>(null);
 
-  // Initialize data: Default is 0 data as requested ("Give me a software with 0 data, i will import my data")
-  useEffect(() => {
+  // Fetch live database status
+  const refreshDbStatus = useCallback(async () => {
     try {
-      const isInitialized = localStorage.getItem(STORAGE_KEYS.INIT_FLAG);
-      
-      if (isInitialized) {
-        setOwners(JSON.parse(localStorage.getItem(STORAGE_KEYS.OWNERS) || '[]'));
-        setProperties(JSON.parse(localStorage.getItem(STORAGE_KEYS.PROPERTIES) || '[]'));
-        setBuyers(JSON.parse(localStorage.getItem(STORAGE_KEYS.BUYERS) || '[]'));
-        setTenants(JSON.parse(localStorage.getItem(STORAGE_KEYS.TENANTS) || '[]'));
-        setListings(JSON.parse(localStorage.getItem(STORAGE_KEYS.LISTINGS) || '[]'));
-        setTransactions(JSON.parse(localStorage.getItem(STORAGE_KEYS.TRANSACTIONS) || '[]'));
-        setActivities(JSON.parse(localStorage.getItem(STORAGE_KEYS.ACTIVITIES) || '[]'));
-        setFollowUps(JSON.parse(localStorage.getItem(STORAGE_KEYS.FOLLOWUPS) || '[]'));
-        setSaleLeads(JSON.parse(localStorage.getItem(STORAGE_KEYS.SALE_LEADS) || '[]'));
-        setRentalLeads(JSON.parse(localStorage.getItem(STORAGE_KEYS.RENTAL_LEADS) || '[]'));
-        
-        const storedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
-        const parsedUsers: User[] = storedUsers ? JSON.parse(storedUsers) : INITIAL_USERS;
-        setUsers(parsedUsers);
-
-        const storedRoles = localStorage.getItem(STORAGE_KEYS.ROLES);
-        const parsedRoles: Role[] = storedRoles ? JSON.parse(storedRoles) : INITIAL_ROLES;
-        setRoles(parsedRoles);
-
-        const currentUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
-        const matchedUser = parsedUsers.find(u => u.id === currentUserId) || parsedUsers[0] || INITIAL_USERS[0];
-        setCurrentUser(matchedUser);
-
-        setScoringRules(JSON.parse(localStorage.getItem(STORAGE_KEYS.SCORING_RULES) || JSON.stringify(INITIAL_SCORING_RULES)));
-        setTemplates(JSON.parse(localStorage.getItem(STORAGE_KEYS.TEMPLATES) || JSON.stringify(INITIAL_TEMPLATES)));
-        setAuditLogs(JSON.parse(localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS) || '[]'));
-        const report = localStorage.getItem(STORAGE_KEYS.LAST_REPORT);
-        if (report) setLastImportReport(JSON.parse(report));
-      } else {
-        // Clean Initial State: 0 CRM Records (ready for user's own spreadsheet import)
-        setOwners([]);
-        setProperties([]);
-        setBuyers([]);
-        setTenants([]);
-        setListings([]);
-        setTransactions([]);
-        setActivities([]);
-        setFollowUps([]);
-        setSaleLeads([]);
-        setRentalLeads([]);
-        setUsers(INITIAL_USERS);
-        setRoles(INITIAL_ROLES);
-        setCurrentUser(INITIAL_USERS[0]);
-        setScoringRules(INITIAL_SCORING_RULES);
-        setTemplates(INITIAL_TEMPLATES);
-        setAuditLogs([
-          {
-            id: 'aud-clean-start',
-            timestamp: new Date().toISOString(),
-            user: INITIAL_USERS[0].name,
-            action: 'Record created',
-            details: 'CRM deployed with 0 records in Clean Slate mode. Ready for Excel / CSV data import.',
-            entityType: 'User'
-          }
-        ]);
-        localStorage.setItem(STORAGE_KEYS.INIT_FLAG, 'true');
+      const res = await fetch('/api/db/status');
+      if (res.ok) {
+        const data = await res.json();
+        setDbStatus(prev => ({
+          ...data,
+          isSyncing: prev.isSyncing,
+          lastSyncedAt: prev.lastSyncedAt
+        }));
       }
-    } catch (e) {
-      console.error('Error loading CRM state:', e);
-      setOwners([]);
-      setProperties([]);
-      setBuyers([]);
-      setTenants([]);
-      setListings([]);
-      setTransactions([]);
-      setActivities([]);
-      setFollowUps([]);
-      setSaleLeads([]);
-      setRentalLeads([]);
-      setUsers(INITIAL_USERS);
-      setRoles(INITIAL_ROLES);
-      setCurrentUser(INITIAL_USERS[0]);
-    } finally {
-      setIsLoading(false);
+    } catch (err) {
+      console.warn('Could not fetch DB status:', err);
     }
   }, []);
 
-  // Save to localStorage whenever data changes
+  // Initialize data: Load from server database (MongoDB / persistent disk) first
+  useEffect(() => {
+    let isMounted = true;
+
+    async function initializeCrmState() {
+      try {
+        refreshDbStatus();
+        const res = await fetch('/api/db/load-all');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && isMounted) {
+            if (Array.isArray(data.owners)) setOwners(data.owners);
+            if (Array.isArray(data.properties)) setProperties(data.properties);
+            if (Array.isArray(data.buyers)) setBuyers(data.buyers);
+            if (Array.isArray(data.tenants)) setTenants(data.tenants);
+            if (Array.isArray(data.listings)) setListings(data.listings);
+            if (Array.isArray(data.transactions)) setTransactions(data.transactions);
+            if (Array.isArray(data.activities)) setActivities(data.activities);
+            if (Array.isArray(data.followUps)) setFollowUps(data.followUps);
+            if (Array.isArray(data.saleLeads)) setSaleLeads(data.saleLeads);
+            if (Array.isArray(data.rentalLeads)) setRentalLeads(data.rentalLeads);
+            if (Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
+            if (Array.isArray(data.roles) && data.roles.length > 0) setRoles(data.roles);
+            if (Array.isArray(data.scoringRules) && data.scoringRules.length > 0) setScoringRules(data.scoringRules);
+            if (Array.isArray(data.templates) && data.templates.length > 0) setTemplates(data.templates);
+            if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
+            if (data.currentUser) setCurrentUser(data.currentUser);
+            if (data.lastImportReport) setLastImportReport(data.lastImportReport);
+            
+            const timeStr = new Date().toLocaleTimeString();
+            setLastDbSyncTime(timeStr);
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Server database load failed, falling back to local cache:', err);
+      }
+
+      // Fallback to localStorage if server load didn't complete
+      if (isMounted) {
+        try {
+          const isInitialized = localStorage.getItem(STORAGE_KEYS.INIT_FLAG);
+          if (isInitialized) {
+            setOwners(JSON.parse(localStorage.getItem(STORAGE_KEYS.OWNERS) || '[]'));
+            setProperties(JSON.parse(localStorage.getItem(STORAGE_KEYS.PROPERTIES) || '[]'));
+            setBuyers(JSON.parse(localStorage.getItem(STORAGE_KEYS.BUYERS) || '[]'));
+            setTenants(JSON.parse(localStorage.getItem(STORAGE_KEYS.TENANTS) || '[]'));
+            setListings(JSON.parse(localStorage.getItem(STORAGE_KEYS.LISTINGS) || '[]'));
+            setTransactions(JSON.parse(localStorage.getItem(STORAGE_KEYS.TRANSACTIONS) || '[]'));
+            setActivities(JSON.parse(localStorage.getItem(STORAGE_KEYS.ACTIVITIES) || '[]'));
+            setFollowUps(JSON.parse(localStorage.getItem(STORAGE_KEYS.FOLLOWUPS) || '[]'));
+            setSaleLeads(JSON.parse(localStorage.getItem(STORAGE_KEYS.SALE_LEADS) || '[]'));
+            setRentalLeads(JSON.parse(localStorage.getItem(STORAGE_KEYS.RENTAL_LEADS) || '[]'));
+            const storedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
+            if (storedUsers) setUsers(JSON.parse(storedUsers));
+            const storedRoles = localStorage.getItem(STORAGE_KEYS.ROLES);
+            if (storedRoles) setRoles(JSON.parse(storedRoles));
+            const storedRules = localStorage.getItem(STORAGE_KEYS.SCORING_RULES);
+            if (storedRules) setScoringRules(JSON.parse(storedRules));
+            const storedTemplates = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
+            if (storedTemplates) setTemplates(JSON.parse(storedTemplates));
+            setAuditLogs(JSON.parse(localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS) || '[]'));
+          } else {
+            // Clean Initial State: 0 CRM Records
+            setOwners([]);
+            setProperties([]);
+            setBuyers([]);
+            setTenants([]);
+            setListings([]);
+            setTransactions([]);
+            setActivities([]);
+            setFollowUps([]);
+            setSaleLeads([]);
+            setRentalLeads([]);
+            setUsers(INITIAL_USERS);
+            setRoles(INITIAL_ROLES);
+            setCurrentUser(INITIAL_USERS[0]);
+            setScoringRules(INITIAL_SCORING_RULES);
+            setTemplates(INITIAL_TEMPLATES);
+            setAuditLogs([
+              {
+                id: 'aud-clean-start',
+                timestamp: new Date().toISOString(),
+                user: INITIAL_USERS[0].name,
+                action: 'Record created',
+                details: 'CRM initialized with 0 records. Ready for Excel / CSV data import.',
+                entityType: 'User'
+              }
+            ]);
+            localStorage.setItem(STORAGE_KEYS.INIT_FLAG, 'true');
+          }
+        } catch (e) {
+          console.error('Error reading localStorage fallback:', e);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    initializeCrmState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [refreshDbStatus]);
+
+  // Synchronize state directly to Database
+  const syncToDatabase = useCallback(async (customPayload?: any): Promise<boolean> => {
+    setIsDbSyncing(true);
+    try {
+      const payload = customPayload || {
+        owners,
+        properties,
+        buyers,
+        tenants,
+        listings,
+        transactions,
+        activities,
+        followUps,
+        saleLeads,
+        rentalLeads,
+        users,
+        roles,
+        currentUser,
+        scoringRules,
+        templates,
+        auditLogs,
+        lastImportReport
+      };
+
+      const res = await fetch('/api/db/sync-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const timeStr = new Date().toLocaleTimeString();
+        setLastDbSyncTime(timeStr);
+        setDbStatus(prev => ({
+          ...prev,
+          lastSyncedAt: timeStr,
+          counts: {
+            owners: payload.owners?.length || 0,
+            properties: payload.properties?.length || 0,
+            saleLeads: payload.saleLeads?.length || 0,
+            rentalLeads: payload.rentalLeads?.length || 0,
+            activities: payload.activities?.length || 0,
+            followUps: payload.followUps?.length || 0,
+            users: payload.users?.length || 0,
+            auditLogs: payload.auditLogs?.length || 0
+          }
+        }));
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error('Database sync failed:', e);
+      return false;
+    } finally {
+      setIsDbSyncing(false);
+    }
+  }, [
+    owners, properties, buyers, tenants, listings, transactions,
+    activities, followUps, saleLeads, rentalLeads, users, roles,
+    currentUser, scoringRules, templates, auditLogs, lastImportReport
+  ]);
+
+  // Save to localStorage & Debounced Database Sync whenever state changes
   useEffect(() => {
     if (isLoading) return;
+
     try {
       localStorage.setItem(STORAGE_KEYS.INIT_FLAG, 'true');
       localStorage.setItem(STORAGE_KEYS.OWNERS, JSON.stringify(owners));
@@ -269,12 +403,18 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.setItem(STORAGE_KEYS.LAST_REPORT, JSON.stringify(lastImportReport));
       }
     } catch (e) {
-      console.error('Failed to sync to localStorage:', e);
+      console.warn('LocalStorage quota or sync warning:', e);
     }
+
+    const timeout = setTimeout(() => {
+      syncToDatabase();
+    }, 800);
+
+    return () => clearTimeout(timeout);
   }, [
     owners, properties, buyers, tenants, listings, transactions, 
     activities, followUps, saleLeads, rentalLeads, users, roles, currentUser, scoringRules, 
-    templates, auditLogs, lastImportReport, isLoading
+    templates, auditLogs, lastImportReport, isLoading, syncToDatabase
   ]);
 
   const logAudit = useCallback((action: AuditLog['action'], details: string, recordId?: string, entityType?: AuditLog['entityType']) => {
@@ -617,10 +757,46 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const importOwners = useCallback((importedOwners: Owner[], report: ImportSummaryReport) => {
-    setOwners(prev => [...importedOwners, ...prev]);
+    setOwners(prev => {
+      const combined = [...importedOwners, ...prev];
+      syncToDatabase({
+        owners: combined,
+        properties,
+        buyers,
+        tenants,
+        listings,
+        transactions,
+        activities,
+        followUps,
+        saleLeads,
+        rentalLeads,
+        users,
+        roles,
+        currentUser,
+        scoringRules,
+        templates,
+        auditLogs: [
+          {
+            id: `aud-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            user: currentUser.name,
+            action: 'Database imported',
+            details: `Imported ${importedOwners.length} owners from Excel/CSV file`,
+            entityType: 'Owner'
+          },
+          ...auditLogs
+        ],
+        lastImportReport: report
+      });
+      return combined;
+    });
     setLastImportReport(report);
     logAudit('Database imported', `Imported ${importedOwners.length} owners from Excel/CSV file`);
-  }, [logAudit]);
+  }, [
+    syncToDatabase, properties, buyers, tenants, listings, transactions,
+    activities, followUps, saleLeads, rentalLeads, users, roles, currentUser,
+    scoringRules, templates, auditLogs, logAudit
+  ]);
 
   const resetToDemoData = useCallback(() => {
     setOwners(DEMO_OWNERS);
@@ -636,8 +812,27 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setScoringRules(INITIAL_SCORING_RULES);
     setTemplates(INITIAL_TEMPLATES);
     setLastImportReport(null);
+    syncToDatabase({
+      owners: DEMO_OWNERS,
+      properties: DEMO_PROPERTIES,
+      buyers: DEMO_BUYERS,
+      tenants: DEMO_TENANTS,
+      listings: DEMO_LISTINGS,
+      transactions: DEMO_TRANSACTIONS,
+      activities: DEMO_ACTIVITIES,
+      followUps: DEMO_FOLLOWUPS,
+      saleLeads: DEMO_SALE_LEADS,
+      rentalLeads: DEMO_RENTAL_LEADS,
+      users,
+      roles,
+      currentUser,
+      scoringRules: INITIAL_SCORING_RULES,
+      templates: INITIAL_TEMPLATES,
+      auditLogs,
+      lastImportReport: null
+    });
     logAudit('Record created', 'Reset database to 20 fictional Prestige owners and benchmark pipeline state');
-  }, [logAudit]);
+  }, [syncToDatabase, users, roles, currentUser, auditLogs, logAudit]);
 
   const clearAllData = useCallback(() => {
     setOwners([]);
@@ -651,6 +846,22 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSaleLeads([]);
     setRentalLeads([]);
     setLastImportReport(null);
+    try {
+      localStorage.removeItem(STORAGE_KEYS.OWNERS);
+      localStorage.removeItem(STORAGE_KEYS.PROPERTIES);
+      localStorage.removeItem(STORAGE_KEYS.BUYERS);
+      localStorage.removeItem(STORAGE_KEYS.TENANTS);
+      localStorage.removeItem(STORAGE_KEYS.LISTINGS);
+      localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
+      localStorage.removeItem(STORAGE_KEYS.ACTIVITIES);
+      localStorage.removeItem(STORAGE_KEYS.FOLLOWUPS);
+      localStorage.removeItem(STORAGE_KEYS.SALE_LEADS);
+      localStorage.removeItem(STORAGE_KEYS.RENTAL_LEADS);
+      localStorage.removeItem(STORAGE_KEYS.LAST_REPORT);
+      fetch('/api/db/clear', { method: 'POST' }).catch(console.error);
+    } catch (e) {
+      console.warn('Clear storage error:', e);
+    }
     logAudit('Record deleted', 'Cleared all CRM records to clean slate (0 records)');
   }, [logAudit]);
 
@@ -684,6 +895,11 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       auditLogs,
       lastImportReport,
       isLoading,
+      dbStatus,
+      isDbSyncing,
+      lastDbSyncTime,
+      refreshDbStatus,
+      syncToDatabase,
       addOwner,
       updateOwner,
       deleteOwner,

@@ -645,3 +645,23 @@ export interface ImportSummaryReport {
   importedAt?: string;
   importDate?: string;
 }
+
+export interface DatabaseStatus {
+  connected: boolean;
+  type: 'mongodb' | 'local_persistent';
+  dbName: string;
+  hasMongoUri: boolean;
+  isSyncing?: boolean;
+  lastSyncedAt?: string | null;
+  error?: string | null;
+  counts: {
+    owners: number;
+    properties: number;
+    saleLeads: number;
+    rentalLeads: number;
+    activities: number;
+    followUps: number;
+    users: number;
+    auditLogs: number;
+  };
+}

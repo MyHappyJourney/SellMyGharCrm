@@ -30,7 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   searchTerm = '',
   onSearchChange
 }) => {
-  const { currentUser, users, setCurrentUser, owners, followUps, resetToDemoData, clearAllData } = useCrm();
+  const { currentUser, users, setCurrentUser, owners, followUps, dbStatus, isDbSyncing, resetToDemoData, clearAllData } = useCrm();
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [localSearch, setLocalSearch] = useState(searchTerm);
@@ -66,12 +66,23 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Right: Actions, Import status badge & User Profile */}
       <div className="flex items-center space-x-3 sm:space-x-4">
         {/* Status Pill Badge from Design HTML */}
-        <div className="hidden lg:flex items-center bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-full border border-emerald-100">
-          <span className="w-2 h-2 bg-emerald-500 rounded-full mr-2 animate-pulse"></span>
+        <button
+          type="button"
+          onClick={() => onNavigate && onNavigate('settings')}
+          title="Click to view Database & MongoDB settings"
+          className={`hidden lg:flex items-center px-3 py-1.5 rounded-full border transition-colors cursor-pointer ${
+            dbStatus.type === 'mongodb'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/70'
+              : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100/70'
+          }`}
+        >
+          <span className={`w-2 h-2 rounded-full mr-2 ${
+            isDbSyncing ? 'bg-amber-500 animate-spin' : (dbStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-blue-500')
+          }`}></span>
           <span className="text-xs font-semibold uppercase tracking-wider">
-            Database Active: {owners.length.toLocaleString()} Records
+            {isDbSyncing ? 'Syncing...' : `${dbStatus.type === 'mongodb' ? 'MongoDB' : 'Database'}: ${owners.length.toLocaleString()} Records`}
           </span>
-        </div>
+        </button>
 
         {/* Import Button */}
         <button

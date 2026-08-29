@@ -36,7 +36,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ initialTab = 'users'
     auditLogs,
     resetToDemoData,
     clearAllData,
-    hasPermission 
+    hasPermission,
+    dbStatus,
+    isDbSyncing,
+    lastDbSyncTime,
+    refreshDbStatus,
+    syncToDatabase
   } = useCrm();
 
   const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'scoring' | 'database' | 'audit'>(
@@ -271,82 +276,173 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ initialTab = 'users'
 
       {/* Tab 4: Database & Zero-Data Controls */}
       {activeTab === 'database' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Wipe to 0 Data */}
-          <div className="bg-white p-6 rounded-2xl border border-rose-200 shadow-2xs space-y-4">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
-                <Trash2 className="h-5 w-5" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-slate-900">Zero-Data Clean Slate Wipe</h2>
-                <p className="text-xs text-slate-500">Remove all test/demo records to prepare for real owner data import</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Clicking below will clear all owner records, pipeline leads, properties, and listings to give you an empty <strong>0-data production instance</strong> ready for your official 5,000+ Excel/CSV database import.
-            </p>
-
-            <button
-              onClick={() => {
-                if (window.confirm('Clear all CRM records so you can start with 0 data and import your real owner files?')) {
-                  clearAllData();
-                  alert('CRM database is now completely clean with 0 records. You can now use "+ Import Excel/CSV" to import your custom database!');
-                }
-              }}
-              className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center space-x-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              <span>Wipe to 0 Records (Clean Slate for Import)</span>
-            </button>
-          </div>
-
-          {/* Export Full CSV */}
+        <div className="space-y-6">
+          {/* MongoDB Live Status Banner */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-                <FileSpreadsheet className="h-5 w-5" />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div className="flex items-center space-x-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
+                  dbStatus.type === 'mongodb' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
+                }`}>
+                  <Database className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h2 className="text-sm font-bold text-slate-900">
+                      {dbStatus.type === 'mongodb' ? 'MongoDB Atlas Cluster Connected' : 'Persistent Storage Engine Active'}
+                    </h2>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      dbStatus.connected
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : 'bg-amber-100 text-amber-800 border border-amber-300'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${dbStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                      {dbStatus.type === 'mongodb' ? 'MongoDB Live' : 'Disk / JSON Store'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Database: <span className="font-mono font-semibold text-slate-700">{dbStatus.dbName}</span> • Last Synchronized: <span className="font-semibold text-slate-700">{lastDbSyncTime || 'Just now'}</span>
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-sm font-bold text-slate-900">Export Complete Database</h2>
-                <p className="text-xs text-slate-500">Backup your entire CRM database to CSV/Excel</p>
+
+              <div className="flex items-center space-x-2 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await refreshDbStatus();
+                    await syncToDatabase();
+                  }}
+                  disabled={isDbSyncing}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl border border-slate-200 transition-colors flex items-center space-x-1.5 disabled:opacity-60"
+                >
+                  <Sparkles className={`h-3.5 w-3.5 ${isDbSyncing ? 'animate-spin text-blue-600' : 'text-slate-600'}`} />
+                  <span>{isDbSyncing ? 'Syncing...' : 'Sync Database Now'}</span>
+                </button>
               </div>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Export all {owners.length} current owner contacts with their qualification results, lead scores, phone numbers, and pipeline stages in standard CSV format.
-            </p>
+            {/* Storage Metric Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-500 block text-[11px]">Owner Profiles</span>
+                <span className="text-lg font-bold text-slate-900">{owners.length.toLocaleString()}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-500 block text-[11px]">Sale & Rent Leads</span>
+                <span className="text-lg font-bold text-blue-600">{(dbStatus.counts.saleLeads + dbStatus.counts.rentalLeads).toLocaleString()}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-500 block text-[11px]">Audit Logs</span>
+                <span className="text-lg font-bold text-slate-900">{auditLogs.length.toLocaleString()}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-500 block text-[11px]">Data Persistence</span>
+                <span className="text-xs font-bold text-emerald-600 mt-1 block">Zero Reload Loss</span>
+              </div>
+            </div>
 
-            <button
-              onClick={handleExport}
-              disabled={owners.length === 0}
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Download className="h-4 w-4" />
-              <span>Download Clean CSV ({owners.length} Owners)</span>
-            </button>
+            {/* MongoDB Connection Instructions Card */}
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2">
+              <div className="flex items-center space-x-2 text-slate-900 font-bold">
+                <KeyRound className="h-4 w-4 text-blue-600" />
+                <span>MongoDB Credentials & Configuration</span>
+              </div>
+              <p className="text-slate-600 leading-relaxed">
+                To connect your dedicated <strong>MongoDB Atlas</strong> or self-hosted database instance, set your environment variables in <code className="bg-slate-200 text-slate-800 px-1 py-0.5 rounded font-mono text-[11px]">.env</code>:
+              </p>
+              <div className="p-3 bg-slate-900 text-emerald-400 font-mono text-[11px] rounded-lg overflow-x-auto select-all">
+                MONGODB_URI=mongodb+srv://&lt;username&gt;:&lt;password&gt;@cluster0.abcde.mongodb.net/?retryWrites=true&w=majority<br />
+                MONGODB_DB_NAME=smg_crm
+              </div>
+              <p className="text-[11px] text-slate-500">
+                {dbStatus.hasMongoUri 
+                  ? '✅ MONGODB_URI is currently configured and actively persisting data to your MongoDB database.' 
+                  : 'ℹ️ If MONGODB_URI is not supplied, the CRM seamlessly persists all records to local persistent server disk, ensuring 0 data loss on reload.'}
+              </p>
+            </div>
           </div>
 
-          {/* Sample Restore Option */}
-          <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-3 md:col-span-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Demo / Sandbox Testing Records</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Need sample Prestige project records to test pipelines and dialer queues?
-                </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Wipe to 0 Data */}
+            <div className="bg-white p-6 rounded-2xl border border-rose-200 shadow-2xs space-y-4">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">Zero-Data Clean Slate Wipe</h2>
+                  <p className="text-xs text-slate-500">Remove all test/demo records to prepare for real owner data import</p>
+                </div>
               </div>
+
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Clicking below will clear all owner records, pipeline leads, properties, and listings across MongoDB and memory to give you an empty <strong>0-data production instance</strong> ready for your official 5,000+ Excel/CSV database import.
+              </p>
+
               <button
+                type="button"
                 onClick={() => {
-                  if (window.confirm('Restore 20 sample Prestige owner records?')) {
-                    resetToDemoData();
+                  if (window.confirm('Clear all CRM records so you can start with 0 data and import your real owner files?')) {
+                    clearAllData();
+                    alert('CRM database is now completely clean with 0 records. You can now use "+ Import Excel/CSV" to import your custom database!');
                   }
                 }}
-                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-xl border border-slate-300 transition-colors"
+                className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center space-x-2 cursor-pointer"
               >
-                Load 20 Sample Records
+                <Trash2 className="h-4 w-4" />
+                <span>Wipe to 0 Records (Clean Slate for Import)</span>
               </button>
+            </div>
+
+            {/* Export Full CSV */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                  <FileSpreadsheet className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">Export Complete Database</h2>
+                  <p className="text-xs text-slate-500">Backup your entire CRM database to CSV/Excel</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Export all {owners.length} current owner contacts with their qualification results, lead scores, phone numbers, and pipeline stages in standard CSV format.
+              </p>
+
+              <button
+                type="button"
+                onClick={handleExport}
+                disabled={owners.length === 0}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <Download className="h-4 w-4" />
+                <span>Download Clean CSV ({owners.length} Owners)</span>
+              </button>
+            </div>
+
+            {/* Sample Restore Option */}
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-3 md:col-span-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Demo / Sandbox Testing Records</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Need sample Prestige project records to test pipelines and dialer queues?
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Restore 20 sample Prestige owner records?')) {
+                      resetToDemoData();
+                    }
+                  }}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-xl border border-slate-300 transition-colors cursor-pointer"
+                >
+                  Load 20 Sample Records
+                </button>
+              </div>
             </div>
           </div>
         </div>
