@@ -93,6 +93,68 @@ export async function getMongoDb(): Promise<Db | null> {
   }
 }
 
+export async function testMongoConnection(customUri?: string): Promise<{
+  success: boolean;
+  message: string;
+  details?: string;
+  databaseName?: string;
+  hasMongoUri: boolean;
+}> {
+  const uri = customUri || process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGODB_CONNECTION_STRING;
+
+  if (!uri) {
+    return {
+      success: false,
+      hasMongoUri: false,
+      message: 'MONGODB_URI is not set.',
+      details: 'Please add MONGODB_URI in Settings > Secrets or in your .env file.'
+    };
+  }
+
+  let testClient: MongoClient | null = null;
+  try {
+    const dbName = process.env.MONGODB_DB_NAME || 'sellmyghar_crm';
+    testClient = new MongoClient(uri, {
+      serverSelectionTimeoutMS: 6000,
+      connectTimeoutMS: 6000,
+    });
+
+    await testClient.connect();
+    await testClient.db(dbName).command({ ping: 1 });
+    
+    // Also update global client if valid
+    mongoClient = testClient;
+    mongoDb = testClient.db(dbName);
+    lastConnectionError = null;
+
+    return {
+      success: true,
+      hasMongoUri: true,
+      databaseName: dbName,
+      message: `Successfully connected to MongoDB Atlas database "${dbName}"!`,
+      details: 'All CRM records are now persisting directly to your MongoDB cluster in real-time.'
+    };
+  } catch (err: any) {
+    const errMsg = err.message || String(err);
+    let recommendation = 'Unknown connection error. Please verify your connection string.';
+
+    if (errMsg.includes('Server selection timed out') || errMsg.includes('ETIMEDOUT') || errMsg.includes('ENOTFOUND')) {
+      recommendation = 'Network Access Blocked: Please log into MongoDB Atlas > "Network Access" and click "Add IP Address" -> Select "Allow Access from Anywhere (0.0.0.0/0)". Cloud Run containers use dynamic IPs and require 0.0.0.0/0.';
+    } else if (errMsg.includes('Authentication failed') || errMsg.includes('auth failed') || errMsg.includes('bad auth')) {
+      recommendation = 'Authentication Failed: Please check MongoDB Atlas > "Database Access" to ensure your database username and password are correct, and verify special characters in the password are URL-encoded without < > brackets.';
+    } else if (errMsg.includes('querySrv') || errMsg.includes('SRV')) {
+      recommendation = 'Invalid SRV Connection String: Please ensure your URI starts with "mongodb+srv://" followed by your cluster address (e.g., cluster0.xxxx.mongodb.net).';
+    }
+
+    return {
+      success: false,
+      hasMongoUri: true,
+      message: `Failed to connect to MongoDB: ${errMsg}`,
+      details: recommendation
+    };
+  }
+}
+
 // Read from Local File Store (used as fallback or when MongoDB URI is not yet configured)
 export function readLocalStore(): any {
   try {

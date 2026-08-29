@@ -7,7 +7,8 @@ import {
   getDatabaseStatus, 
   loadAllData, 
   syncAllData, 
-  clearAllDatabase 
+  clearAllDatabase,
+  testMongoConnection
 } from './server/db';
 
 dotenv.config();
@@ -46,6 +47,17 @@ async function startServer() {
       res.json(status);
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to get DB status' });
+    }
+  });
+
+  // Database Endpoint: Test MongoDB Connection directly
+  app.post('/api/db/test-connection', async (req, res) => {
+    try {
+      const { uri } = req.body || {};
+      const result = await testMongoConnection(uri);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message || 'Error testing MongoDB connection' });
     }
   });
 

@@ -14,7 +14,10 @@ import {
   History,
   Database,
   KeyRound,
-  Sparkles
+  Sparkles,
+  AlertCircle,
+  ExternalLink,
+  RefreshCw
 } from 'lucide-react';
 import { useCrm } from '../../context/CrmContext';
 import { UserRole } from '../../types';
@@ -49,6 +52,44 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ initialTab = 'users'
   );
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  // Database Diagnostic & Test State
+  const [testUriInput, setTestUriInput] = useState('');
+  const [isTestingDb, setIsTestingDb] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message: string;
+    details?: string;
+    databaseName?: string;
+    hasMongoUri: boolean;
+  } | null>(null);
+
+  const runTestConnection = async (customUri?: string) => {
+    setIsTestingDb(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/db/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uri: customUri || testUriInput || undefined })
+      });
+      const data = await res.json();
+      setTestResult(data);
+      if (data.success) {
+        await refreshDbStatus();
+        await syncToDatabase();
+      }
+    } catch (err: any) {
+      setTestResult({
+        success: false,
+        hasMongoUri: true,
+        message: 'Could not reach database test endpoint',
+        details: err.message
+      });
+    } finally {
+      setIsTestingDb(false);
+    }
+  };
 
   // Editable Scoring Rules
   const [immediateSale, setImmediateSale] = useState(35);
@@ -342,24 +383,89 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ initialTab = 'users'
               </div>
             </div>
 
-            {/* MongoDB Connection Instructions Card */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2">
-              <div className="flex items-center space-x-2 text-slate-900 font-bold">
-                <KeyRound className="h-4 w-4 text-blue-600" />
-                <span>MongoDB Credentials & Configuration</span>
+            {/* MongoDB Connection Instructions & Live Diagnostic Tester */}
+            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                <div className="flex items-center space-x-2 text-slate-900 font-bold text-sm">
+                  <KeyRound className="h-4 w-4 text-blue-600" />
+                  <span>MongoDB Atlas Configuration & Live Diagnostics</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => runTestConnection()}
+                  disabled={isTestingDb}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[11px] flex items-center space-x-1.5 transition-colors disabled:opacity-50 self-start sm:self-auto cursor-pointer"
+                >
+                  <RefreshCw className={`h-3 w-3 ${isTestingDb ? 'animate-spin' : ''}`} />
+                  <span>{isTestingDb ? 'Testing Connection...' : 'Test Current MongoDB Connection'}</span>
+                </button>
               </div>
-              <p className="text-slate-600 leading-relaxed">
-                To connect your dedicated <strong>MongoDB Atlas</strong> or self-hosted database instance, set your environment variables in <code className="bg-slate-200 text-slate-800 px-1 py-0.5 rounded font-mono text-[11px]">.env</code>:
-              </p>
-              <div className="p-3 bg-slate-900 text-emerald-400 font-mono text-[11px] rounded-lg overflow-x-auto select-all">
-                MONGODB_URI=mongodb+srv://&lt;username&gt;:&lt;password&gt;@cluster0.abcde.mongodb.net/?retryWrites=true&w=majority<br />
-                MONGODB_DB_NAME=smg_crm
+
+              {/* Diagnostic Test Result Box */}
+              {testResult && (
+                <div className={`p-4 rounded-xl border ${
+                  testResult.success 
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
+                    : 'bg-rose-50 border-rose-200 text-rose-900'
+                }`}>
+                  <div className="flex items-start space-x-2.5">
+                    {testResult.success ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-rose-600 mt-0.5 shrink-0" />
+                    )}
+                    <div className="space-y-1">
+                      <p className="font-bold text-xs">{testResult.message}</p>
+                      {testResult.details && (
+                        <p className="text-[11px] leading-relaxed opacity-90">{testResult.details}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MongoDB Atlas Essential 3-Step Setup Checklist */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
+                <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center space-x-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                  <span>MongoDB Atlas Setup Checklist (Why Data May Not Connect)</span>
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px]">
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 space-y-1">
+                    <span className="font-bold text-slate-800 block">1. Network Access (IP Whitelist)</span>
+                    <p className="text-slate-600 leading-relaxed">
+                      In MongoDB Atlas, navigate to <strong>Network Access</strong> &rarr; click <strong>Add IP Address</strong> &rarr; choose <strong>Allow Access From Anywhere (<code className="font-mono text-[10px]">0.0.0.0/0</code>)</strong>. Without this, cloud apps cannot connect.
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 space-y-1">
+                    <span className="font-bold text-slate-800 block">2. Database User & Password</span>
+                    <p className="text-slate-600 leading-relaxed">
+                      In <strong>Database Access</strong>, ensure your user has <strong>Read and Write</strong> privileges. In your URI, replace <code className="font-mono text-[10px]">&lt;password&gt;</code> with your real password (without <code className="font-mono text-[10px]">&lt; &gt;</code> brackets).
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 space-y-1">
+                    <span className="font-bold text-slate-800 block">3. Connection String Format</span>
+                    <p className="text-slate-600 leading-relaxed">
+                      Copy the SRV connection string from <strong>Connect &rarr; Drivers</strong> and add it as <code className="font-mono text-[10px]">MONGODB_URI</code>.
+                    </p>
+                  </div>
+                </div>
               </div>
-              <p className="text-[11px] text-slate-500">
-                {dbStatus.hasMongoUri 
-                  ? '✅ MONGODB_URI is currently configured and actively persisting data to your MongoDB database.' 
-                  : 'ℹ️ If MONGODB_URI is not supplied, the CRM seamlessly persists all records to local persistent server disk, ensuring 0 data loss on reload.'}
-              </p>
+
+              {/* URI Format Example */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-slate-600">
+                  <span className="font-semibold text-[11px]">Environment Variable Format:</span>
+                  <span className="text-[10px] text-slate-500">Configure in Settings &rarr; Secrets or .env</span>
+                </div>
+                <div className="p-3 bg-slate-900 text-emerald-400 font-mono text-[11px] rounded-lg overflow-x-auto select-all">
+                  MONGODB_URI=mongodb+srv://&lt;username&gt;:&lt;password&gt;@cluster0.abcde.mongodb.net/?retryWrites=true&w=majority<br />
+                  MONGODB_DB_NAME=sellmyghar_crm
+                </div>
+              </div>
             </div>
           </div>
 

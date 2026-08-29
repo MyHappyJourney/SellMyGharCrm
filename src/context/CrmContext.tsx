@@ -215,31 +215,115 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     async function initializeCrmState() {
       try {
         refreshDbStatus();
+
+        // 1. Read local cache first
+        let localOwners: Owner[] = [];
+        let localProps: Property[] = [];
+        let localBuyers: Buyer[] = [];
+        let localTenants: Tenant[] = [];
+        let localListings: PropertyListing[] = [];
+        let localTransactions: Transaction[] = [];
+        let localActivities: Activity[] = [];
+        let localFollowUps: FollowUpTask[] = [];
+        let localSaleLeads: SaleLead[] = [];
+        let localRentalLeads: RentalLead[] = [];
+        let localAuditLogs: AuditLog[] = [];
+
+        try {
+          localOwners = JSON.parse(localStorage.getItem(STORAGE_KEYS.OWNERS) || '[]');
+          localProps = JSON.parse(localStorage.getItem(STORAGE_KEYS.PROPERTIES) || '[]');
+          localBuyers = JSON.parse(localStorage.getItem(STORAGE_KEYS.BUYERS) || '[]');
+          localTenants = JSON.parse(localStorage.getItem(STORAGE_KEYS.TENANTS) || '[]');
+          localListings = JSON.parse(localStorage.getItem(STORAGE_KEYS.LISTINGS) || '[]');
+          localTransactions = JSON.parse(localStorage.getItem(STORAGE_KEYS.TRANSACTIONS) || '[]');
+          localActivities = JSON.parse(localStorage.getItem(STORAGE_KEYS.ACTIVITIES) || '[]');
+          localFollowUps = JSON.parse(localStorage.getItem(STORAGE_KEYS.FOLLOWUPS) || '[]');
+          localSaleLeads = JSON.parse(localStorage.getItem(STORAGE_KEYS.SALE_LEADS) || '[]');
+          localRentalLeads = JSON.parse(localStorage.getItem(STORAGE_KEYS.RENTAL_LEADS) || '[]');
+          localAuditLogs = JSON.parse(localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS) || '[]');
+        } catch (storageErr) {
+          console.warn('Could not parse localStorage cache:', storageErr);
+        }
+
+        // 2. Query server database
         const res = await fetch('/api/db/load-all');
         if (res.ok) {
           const data = await res.json();
           if (data && isMounted) {
-            if (Array.isArray(data.owners)) setOwners(data.owners);
-            if (Array.isArray(data.properties)) setProperties(data.properties);
-            if (Array.isArray(data.buyers)) setBuyers(data.buyers);
-            if (Array.isArray(data.tenants)) setTenants(data.tenants);
-            if (Array.isArray(data.listings)) setListings(data.listings);
-            if (Array.isArray(data.transactions)) setTransactions(data.transactions);
-            if (Array.isArray(data.activities)) setActivities(data.activities);
-            if (Array.isArray(data.followUps)) setFollowUps(data.followUps);
-            if (Array.isArray(data.saleLeads)) setSaleLeads(data.saleLeads);
-            if (Array.isArray(data.rentalLeads)) setRentalLeads(data.rentalLeads);
+            const serverOwners = Array.isArray(data.owners) ? data.owners : [];
+            const serverProps = Array.isArray(data.properties) ? data.properties : [];
+            const serverBuyers = Array.isArray(data.buyers) ? data.buyers : [];
+            const serverTenants = Array.isArray(data.tenants) ? data.tenants : [];
+            const serverListings = Array.isArray(data.listings) ? data.listings : [];
+            const serverTrans = Array.isArray(data.transactions) ? data.transactions : [];
+            const serverActivities = Array.isArray(data.activities) ? data.activities : [];
+            const serverFollowUps = Array.isArray(data.followUps) ? data.followUps : [];
+            const serverSaleLeads = Array.isArray(data.saleLeads) ? data.saleLeads : [];
+            const serverRentalLeads = Array.isArray(data.rentalLeads) ? data.rentalLeads : [];
+            const serverAuditLogs = Array.isArray(data.auditLogs) ? data.auditLogs : [];
+
+            // Merge smartly: if server has data use server, but if server is empty while local has data, preserve local and sync up!
+            let resolvedOwners = serverOwners;
+            if (serverOwners.length === 0 && localOwners.length > 0) {
+              resolvedOwners = localOwners;
+            } else if (serverOwners.length > 0 && localOwners.length > 0) {
+              // Combine and deduplicate by id
+              const map = new Map<string, Owner>();
+              localOwners.forEach(o => map.set(o.id, o));
+              serverOwners.forEach(o => map.set(o.id, o));
+              resolvedOwners = Array.from(map.values());
+            }
+
+            setOwners(resolvedOwners);
+            setProperties(serverProps.length >= localProps.length ? serverProps : localProps);
+            setBuyers(serverBuyers.length >= localBuyers.length ? serverBuyers : localBuyers);
+            setTenants(serverTenants.length >= localTenants.length ? serverTenants : localTenants);
+            setListings(serverListings.length >= localListings.length ? serverListings : localListings);
+            setTransactions(serverTrans.length >= localTransactions.length ? serverTrans : localTransactions);
+            setActivities(serverActivities.length >= localActivities.length ? serverActivities : localActivities);
+            setFollowUps(serverFollowUps.length >= localFollowUps.length ? serverFollowUps : localFollowUps);
+            setSaleLeads(serverSaleLeads.length >= localSaleLeads.length ? serverSaleLeads : localSaleLeads);
+            setRentalLeads(serverRentalLeads.length >= localRentalLeads.length ? serverRentalLeads : localRentalLeads);
+            setAuditLogs(serverAuditLogs.length >= localAuditLogs.length ? serverAuditLogs : localAuditLogs);
+
             if (Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
             if (Array.isArray(data.roles) && data.roles.length > 0) setRoles(data.roles);
             if (Array.isArray(data.scoringRules) && data.scoringRules.length > 0) setScoringRules(data.scoringRules);
             if (Array.isArray(data.templates) && data.templates.length > 0) setTemplates(data.templates);
-            if (Array.isArray(data.auditLogs)) setAuditLogs(data.auditLogs);
             if (data.currentUser) setCurrentUser(data.currentUser);
             if (data.lastImportReport) setLastImportReport(data.lastImportReport);
             
             const timeStr = new Date().toLocaleTimeString();
             setLastDbSyncTime(timeStr);
             setIsLoading(false);
+
+            // If local data had records not yet on server, sync them up immediately
+            if (serverOwners.length < resolvedOwners.length) {
+              fetch('/api/db/sync-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  owners: resolvedOwners,
+                  properties: serverProps.length >= localProps.length ? serverProps : localProps,
+                  buyers: serverBuyers.length >= localBuyers.length ? serverBuyers : localBuyers,
+                  tenants: serverTenants.length >= localTenants.length ? serverTenants : localTenants,
+                  listings: serverListings.length >= localListings.length ? serverListings : localListings,
+                  transactions: serverTrans.length >= localTransactions.length ? serverTrans : localTransactions,
+                  activities: serverActivities.length >= localActivities.length ? serverActivities : localActivities,
+                  followUps: serverFollowUps.length >= localFollowUps.length ? serverFollowUps : localFollowUps,
+                  saleLeads: serverSaleLeads.length >= localSaleLeads.length ? serverSaleLeads : localSaleLeads,
+                  rentalLeads: serverRentalLeads.length >= localRentalLeads.length ? serverRentalLeads : localRentalLeads,
+                  users: data.users || INITIAL_USERS,
+                  roles: data.roles || INITIAL_ROLES,
+                  currentUser: data.currentUser || INITIAL_USERS[0],
+                  scoringRules: data.scoringRules || INITIAL_SCORING_RULES,
+                  templates: data.templates || INITIAL_TEMPLATES,
+                  auditLogs: serverAuditLogs.length >= localAuditLogs.length ? serverAuditLogs : localAuditLogs,
+                  lastImportReport: data.lastImportReport
+                })
+              }).catch(console.error);
+            }
+
             return;
           }
         }
