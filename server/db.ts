@@ -41,8 +41,31 @@ const DEFAULT_EMPTY_STATE = {
   isInitialized: true
 };
 
+const DEFAULT_MONGODB_URI = 'mongodb+srv://blrrealestates_db_user:sxPfgzVhOSscJzgD@sellmyghar.dqwvhhq.mongodb.net/?retryWrites=true&w=majority&appName=Sellmyghar';
+const DEFAULT_DB_NAME = 'sellmyghar_crm';
+
+let activeMongoUri: string = process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGODB_CONNECTION_STRING || DEFAULT_MONGODB_URI;
+let activeDbName: string = process.env.MONGODB_DB_NAME || DEFAULT_DB_NAME;
+
+export function setActiveMongoConfig(uri: string, dbName?: string) {
+  if (uri && uri.trim()) {
+    activeMongoUri = uri.trim();
+  }
+  if (dbName && dbName.trim()) {
+    activeDbName = dbName.trim();
+  }
+  // Reset client so it reconnects with the new URI on next query
+  if (mongoClient) {
+    try {
+      mongoClient.close().catch(() => {});
+    } catch {}
+    mongoClient = null;
+    mongoDb = null;
+  }
+}
+
 export async function getMongoDb(): Promise<Db | null> {
-  const uri = process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGODB_CONNECTION_STRING;
+  const uri = activeMongoUri || process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGODB_CONNECTION_STRING || DEFAULT_MONGODB_URI;
   
   if (!uri) {
     return null;
@@ -60,7 +83,7 @@ export async function getMongoDb(): Promise<Db | null> {
 
   isConnecting = true;
   try {
-    const dbName = process.env.MONGODB_DB_NAME || 'sellmyghar_crm';
+    const dbName = activeDbName || process.env.MONGODB_DB_NAME || DEFAULT_DB_NAME;
     mongoClient = new MongoClient(uri, {
       serverSelectionTimeoutMS: 5000,
       connectTimeoutMS: 10000,
@@ -100,7 +123,7 @@ export async function testMongoConnection(customUri?: string): Promise<{
   databaseName?: string;
   hasMongoUri: boolean;
 }> {
-  const uri = customUri || process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGODB_CONNECTION_STRING;
+  const uri = customUri || activeMongoUri || process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGODB_CONNECTION_STRING || DEFAULT_MONGODB_URI;
 
   if (!uri) {
     return {
@@ -113,7 +136,7 @@ export async function testMongoConnection(customUri?: string): Promise<{
 
   let testClient: MongoClient | null = null;
   try {
-    const dbName = process.env.MONGODB_DB_NAME || 'sellmyghar_crm';
+    const dbName = activeDbName || process.env.MONGODB_DB_NAME || DEFAULT_DB_NAME;
     testClient = new MongoClient(uri, {
       serverSelectionTimeoutMS: 6000,
       connectTimeoutMS: 6000,
@@ -122,7 +145,8 @@ export async function testMongoConnection(customUri?: string): Promise<{
     await testClient.connect();
     await testClient.db(dbName).command({ ping: 1 });
     
-    // Also update global client if valid
+    // Also update active connection if valid
+    activeMongoUri = uri;
     mongoClient = testClient;
     mongoDb = testClient.db(dbName);
     lastConnectionError = null;
@@ -194,7 +218,7 @@ export async function getDatabaseStatus(): Promise<{
     auditLogs: number;
   };
 }> {
-  const uri = process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGODB_CONNECTION_STRING;
+  const uri = activeMongoUri || process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGODB_CONNECTION_STRING || DEFAULT_MONGODB_URI;
   const db = await getMongoDb();
 
   if (db) {
@@ -255,7 +279,7 @@ export async function getDatabaseStatus(): Promise<{
     type: 'local_persistent',
     dbName: 'Local Disk Store (data/crm_store.json)',
     hasMongoUri: !!uri,
-    error: lastConnectionError || (uri ? 'Connecting to MongoDB...' : 'MONGODB_URI environment variable not configured yet'),
+    error: lastConnectionError || (uri ? 'Connecting to MongoDB Atlas cluster...' : 'MONGODB_URI not configured'),
     counts: {
       owners: local.owners?.length || 0,
       properties: local.properties?.length || 0,

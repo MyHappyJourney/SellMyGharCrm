@@ -8,7 +8,8 @@ import {
   loadAllData, 
   syncAllData, 
   clearAllDatabase,
-  testMongoConnection
+  testMongoConnection,
+  setActiveMongoConfig
 } from './server/db';
 
 dotenv.config();
@@ -51,13 +52,28 @@ async function startServer() {
   });
 
   // Database Endpoint: Test MongoDB Connection directly
-  app.post('/api/db/test-connection', async (req, res) => {
+  app.post(['/api/db/test', '/api/db/test-connection'], async (req, res) => {
     try {
       const { uri } = req.body || {};
       const result = await testMongoConnection(uri);
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message || 'Error testing MongoDB connection' });
+    }
+  });
+
+  // Database Endpoint: Connect / Set Active MongoDB URI
+  app.post('/api/db/connect', async (req, res) => {
+    try {
+      const { uri, databaseName } = req.body || {};
+      if (uri) {
+        setActiveMongoConfig(uri, databaseName);
+      }
+      const testResult = await testMongoConnection(uri);
+      const status = await getDatabaseStatus();
+      res.json({ ...testResult, status });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || 'Failed to connect to MongoDB' });
     }
   });
 

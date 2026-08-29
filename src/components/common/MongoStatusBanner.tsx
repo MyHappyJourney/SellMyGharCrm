@@ -12,7 +12,19 @@ export const MongoStatusBanner: React.FC<{ onOpenSettings?: () => void }> = ({ o
   const handleRetry = async () => {
     setIsRetrying(true);
     try {
+      // First attempt direct connect with standard configuration
+      const fallbackUri = 'mongodb+srv://blrrealestates_db_user:sxPfgzVhOSscJzgD@sellmyghar.dqwvhhq.mongodb.net/?retryWrites=true&w=majority&appName=Sellmyghar';
+      const storedUri = localStorage.getItem('sellmyghar_custom_mongo_uri') || fallbackUri;
+      
+      await fetch('/api/db/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uri: storedUri, databaseName: 'sellmyghar_crm' })
+      });
+
       await refreshDbStatus();
+    } catch (e) {
+      console.warn('Retry error:', e);
     } finally {
       setIsRetrying(false);
     }
