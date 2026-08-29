@@ -139,8 +139,16 @@ const MainAppContent: React.FC = () => {
             <TemplatesView />
           )}
 
+          {currentView === 'users' && (
+            <SettingsView initialTab="users" />
+          )}
+
+          {currentView === 'roles' && (
+            <SettingsView initialTab="roles" />
+          )}
+
           {currentView === 'settings' && (
-            <SettingsView />
+            <SettingsView initialTab="database" />
           )}
         </main>
       </div>

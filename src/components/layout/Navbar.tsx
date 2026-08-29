@@ -30,7 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   searchTerm = '',
   onSearchChange
 }) => {
-  const { currentUser, users, setCurrentUser, owners, followUps, resetToDemoData } = useCrm();
+  const { currentUser, users, setCurrentUser, owners, followUps, resetToDemoData, clearAllData } = useCrm();
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [localSearch, setLocalSearch] = useState(searchTerm);
@@ -182,18 +182,30 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </button>
                 ))}
               </div>
-              <div className="border-t border-slate-100 pt-1 mt-1 px-3">
+              <div className="border-t border-slate-100 pt-1 mt-1 px-3 space-y-1">
                 <button
                   onClick={() => {
-                    if (confirm('Reset database back to the factory Prestige benchmark data?')) {
+                    if (confirm('Clear all demo data so you can import your clean real Excel / CSV database?')) {
+                      clearAllData();
+                      setShowRoleDropdown(false);
+                    }
+                  }}
+                  className="w-full text-left py-1 text-xs text-rose-600 hover:text-rose-800 flex items-center space-x-1.5 font-medium"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  <span>Clear Demo Data</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm('Restore 20 sample Prestige owner records?')) {
                       resetToDemoData();
                       setShowRoleDropdown(false);
                     }
                   }}
-                  className="w-full text-left py-1.5 text-xs text-red-600 hover:text-red-800 flex items-center space-x-1.5 font-medium"
+                  className="w-full text-left py-1 text-xs text-slate-500 hover:text-slate-700 flex items-center space-x-1.5 font-medium"
                 >
-                  <RefreshCw className="h-3 w-3" />
-                  <span>Reset Demo Data</span>
+                  <Database className="h-3 w-3" />
+                  <span>Load Sample Records</span>
                 </button>
               </div>
             </div>

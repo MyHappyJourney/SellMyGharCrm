@@ -38,7 +38,14 @@ export const BuyerListView: React.FC<BuyerListViewProps> = ({ onNavigateToMatche
   const filteredBuyers = buyers.filter(b => {
     if (!searchTerm) return true;
     const q = searchTerm.toLowerCase();
-    return b.name.toLowerCase().includes(q) || b.phone.includes(q) || b.preferredProjects.some(p => p.toLowerCase().includes(q));
+    const nameMatch = b.name ? b.name.toLowerCase().includes(q) : false;
+    const phoneMatch = b.phone ? b.phone.includes(q) : false;
+    const projectMatch = Array.isArray(b.preferredProjects) 
+      ? b.preferredProjects.some(p => p.toLowerCase().includes(q))
+      : typeof b.preferredProject === 'string'
+        ? b.preferredProject.toLowerCase().includes(q)
+        : false;
+    return nameMatch || phoneMatch || projectMatch;
   });
 
   const handleAddBuyer = (e: React.FormEvent) => {
@@ -72,7 +79,7 @@ export const BuyerListView: React.FC<BuyerListViewProps> = ({ onNavigateToMatche
         <div>
           <div className="flex items-center space-x-2">
             <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight">Buyer CRM & Mandates</h1>
-            <span className="bg-amber-100 text-amber-900 font-bold text-xs px-2.5 py-0.5 rounded-full border border-amber-300">
+            <span className="bg-blue-100 text-blue-800 font-bold text-xs px-2.5 py-0.5 rounded-full border border-blue-200">
               {buyers.length} Qualified Buyers
             </span>
           </div>
@@ -86,12 +93,12 @@ export const BuyerListView: React.FC<BuyerListViewProps> = ({ onNavigateToMatche
             onClick={onNavigateToMatcher}
             className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition-all"
           >
-            <Sparkles className="h-4 w-4 text-amber-400" />
+            <Sparkles className="h-4 w-4 text-blue-400" />
             <span>Smart Match Inventory</span>
           </button>
           <button
             onClick={() => setIsAdding(true)}
-            className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all"
+            className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all"
           >
             <Plus className="h-4 w-4" />
             <span>Add Buyer</span>
@@ -116,64 +123,86 @@ export const BuyerListView: React.FC<BuyerListViewProps> = ({ onNavigateToMatche
       {/* Buyer Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredBuyers.length === 0 ? (
-          <div className="col-span-full py-12 text-center text-slate-400 text-xs">
+          <div className="col-span-full py-12 text-center text-slate-400 text-xs bg-white rounded-2xl border border-slate-200">
             No buyers found. Click "Add Buyer" to register an active requirement.
           </div>
         ) : (
-          filteredBuyers.map((buyer) => (
-            <div key={buyer.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-xs space-y-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm">{buyer.name}</h3>
-                  <div className="flex items-center space-x-2 text-xs text-slate-600 font-mono mt-0.5">
-                    <span>{buyer.phone}</span>
-                  </div>
-                </div>
-                <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded-full border border-amber-200">
-                  {buyer.buyerStage}
-                </span>
-              </div>
+          filteredBuyers.map((buyer) => {
+            const projectList = Array.isArray(buyer.preferredProjects) && buyer.preferredProjects.length > 0
+              ? buyer.preferredProjects
+              : buyer.preferredProject
+                ? [buyer.preferredProject]
+                : [];
+            
+            const bhkText = Array.isArray(buyer.preferredBhk)
+              ? buyer.preferredBhk.join(', ')
+              : buyer.preferredBhk || 'Any BHK';
 
-              <div className="p-2.5 bg-slate-50 rounded-xl space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Budget Range:</span>
-                  <span className="font-bold text-slate-900">
-                    ₹{(buyer.budgetMin / 10000000).toFixed(2)} - ₹{(buyer.budgetMax / 10000000).toFixed(2)} Cr
+            return (
+              <div key={buyer.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-xs space-y-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-sm">{buyer.name}</h3>
+                    <div className="flex items-center space-x-2 text-xs text-slate-600 font-mono mt-0.5">
+                      <span>{buyer.phone}</span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full border border-blue-200">
+                    {buyer.buyerStage || buyer.status || 'Qualified'}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Configuration:</span>
-                  <span className="font-semibold text-slate-800">{buyer.preferredBhk.join(', ')}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Funding / Urgency:</span>
-                  <span className="text-slate-700">{buyer.fundingType} • {buyer.urgency}</span>
-                </div>
-              </div>
 
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Target Prestige Projects:</p>
-                <div className="flex flex-wrap gap-1">
-                  {buyer.preferredProjects.map(p => (
-                    <span key={p} className="text-[10px] font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                      {p}
+                <div className="p-2.5 bg-slate-50 rounded-xl space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Budget Range:</span>
+                    <span className="font-bold text-slate-900">
+                      {buyer.budgetMin != null && buyer.budgetMax != null
+                        ? `₹${(buyer.budgetMin / 10000000).toFixed(2)} - ₹${(buyer.budgetMax / 10000000).toFixed(2)} Cr`
+                        : buyer.budgetMax != null
+                          ? `Up to ₹${(buyer.budgetMax / 10000000).toFixed(2)} Cr`
+                          : 'Budget Flexible'}
                     </span>
-                  ))}
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Configuration:</span>
+                    <span className="font-semibold text-slate-800">{bhkText}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Funding / Urgency:</span>
+                    <span className="text-slate-700">
+                      {buyer.fundingType || buyer.paymentMode || 'Home Loan'} • {buyer.urgency || buyer.purchaseTimeline || 'Flexible'}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Target Prestige Projects:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {projectList.length > 0 ? (
+                      projectList.map(p => (
+                        <span key={p} className="text-[10px] font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                          {p}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-[10px] text-slate-400">All Prestige Projects</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <span className="text-[10px] text-slate-400">Agent: {buyer.assignedAgent || 'Unassigned'}</span>
+                  <button
+                    onClick={onNavigateToMatcher}
+                    className="text-blue-600 hover:text-blue-800 font-bold text-xs flex items-center space-x-1"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    <span>Match Inventory →</span>
+                  </button>
                 </div>
               </div>
-
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="text-[10px] text-slate-400">Agent: {buyer.assignedAgent}</span>
-                <button
-                  onClick={onNavigateToMatcher}
-                  className="text-amber-700 hover:text-amber-800 font-bold text-xs flex items-center space-x-1"
-                >
-                  <Sparkles className="h-3 w-3" />
-                  <span>Match Inventory →</span>
-                </button>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 

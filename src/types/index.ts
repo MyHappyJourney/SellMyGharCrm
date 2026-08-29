@@ -52,12 +52,15 @@ export type ListingStatus =
   | 'Withdrawn';
 
 export type UserRole = 
-  | 'Admin'
-  | 'Manager'
+  | 'Super Admin'
+  | 'Sales Manager'
   | 'Sales Agent'
   | 'Telecaller'
+  | 'Inventory Manager'
   | 'Marketing'
-  | 'Viewer';
+  | 'Compliance Auditor'
+  | 'Viewer'
+  | string;
 
 export type ActivityType = 
   | 'Phone Call'
@@ -87,13 +90,93 @@ export type CommunicationPermissionStatus =
 
 export type PreferredContactMethod = 'Phone Call' | 'WhatsApp' | 'Email' | 'SMS';
 
+export interface RolePermissions {
+  // Owner Database & Properties
+  owners: {
+    view: 'all' | 'assigned' | 'none';
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
+    export: boolean;
+    viewUnmaskedPhone: boolean;
+  };
+  // Telecaller Dialer
+  telecaller: {
+    access: boolean;
+    callAndLog: boolean;
+    qualifyLeads: boolean;
+    reassignLeads: boolean;
+  };
+  // Buyers CRM
+  buyers: {
+    view: 'all' | 'assigned' | 'none';
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
+  };
+  // Tenants CRM
+  tenants: {
+    view: 'all' | 'assigned' | 'none';
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
+  };
+  // Listings & Inventory
+  listings: {
+    view: boolean;
+    create: boolean;
+    edit: boolean;
+    verify: boolean;
+    publish: boolean;
+    delete: boolean;
+  };
+  // Deals & Transactions
+  deals: {
+    view: 'all' | 'assigned' | 'none';
+    managePipeline: boolean;
+    recordRevenue: boolean;
+    closeDeals: boolean;
+  };
+  // Administration & Security
+  admin: {
+    importData: boolean;
+    exportData: boolean;
+    manageUsers: boolean;
+    manageRoles: boolean;
+    manageScoringRules: boolean;
+    viewAuditLogs: boolean;
+    clearOrResetDatabase: boolean;
+  };
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  description: string;
+  isSystem: boolean;
+  color: 'blue' | 'emerald' | 'amber' | 'purple' | 'rose' | 'slate' | 'indigo' | 'cyan';
+  permissions: RolePermissions;
+  userCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
   phone: string;
-  role: UserRole;
+  roleId: string;
+  role: string;
+  department: 'Sales' | 'Telecalling' | 'Field Operations' | 'Inventory & Listings' | 'Management' | 'Marketing' | 'Administration';
+  status: 'Active' | 'Inactive' | 'Invited';
+  assignedProjects: string[];
+  branch?: string;
   avatar?: string;
+  designation?: string;
+  commissionPercentage?: number;
+  lastLogin?: string;
+  createdAt?: string;
 }
 
 export interface OwnerConsent {

@@ -227,7 +227,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </tr>
             </thead>
             <tbody className="text-sm text-slate-700 divide-y divide-slate-100">
-              {qualifiedPipelineOwners.map((owner) => (
+              {qualifiedPipelineOwners.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-slate-400 text-xs">
+                    {owners.length === 0 ? (
+                      <div className="space-y-2 max-w-sm mx-auto">
+                        <p className="text-slate-700 font-semibold text-sm">No records in the CRM database yet</p>
+                        <p className="text-slate-500 text-xs">Click "Import Excel/CSV" to import your 5,000+ Prestige owner database.</p>
+                        <button
+                          onClick={onOpenImport}
+                          className="mt-2 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+                        >
+                          + Import Excel / CSV Database
+                        </button>
+                      </div>
+                    ) : (
+                      "No qualified leads yet. Use Telecaller Dialer to begin qualifying owners."
+                    )}
+                  </td>
+                </tr>
+              ) : (
+                qualifiedPipelineOwners.map((owner) => (
                 <tr 
                   key={owner.id}
                   onClick={() => onSelectOwner(owner.id)}
@@ -306,7 +326,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
                   </td>
                 </tr>
-              ))}
+              )))
+            }
             </tbody>
           </table>
         </div>

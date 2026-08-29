@@ -44,7 +44,23 @@ export const OwnerListView: React.FC<OwnerListViewProps> = ({
   onOpenImport,
   globalSearchTerm = ''
 }) => {
-  const { owners, bulkUpdateOwners, bulkDeleteOwners, users } = useCrm();
+  const { owners, bulkUpdateOwners, bulkDeleteOwners, users, clearAllData, resetToDemoData, hasPermission } = useCrm();
+
+  const canCreateOwner = hasPermission('owners', 'create');
+  const canDeleteOwner = hasPermission('owners', 'delete');
+  const canExportOwner = hasPermission('owners', 'export');
+  const canImportData = hasPermission('admin', 'importData');
+  const canResetDb = hasPermission('admin', 'clearOrResetDatabase');
+  const canViewUnmaskedPhone = hasPermission('owners', 'viewUnmaskedPhone');
+
+  const maskPhone = (phone?: string) => {
+    if (!phone) return '';
+    if (canViewUnmaskedPhone) return phone;
+    // Format: +91 98*** **345
+    const clean = phone.trim();
+    if (clean.length < 6) return '******';
+    return clean.slice(0, 4) + ' ••••• ' + clean.slice(-3);
+  };
 
   // Search and Filter States
   const [searchTerm, setSearchTerm] = useState(globalSearchTerm);
@@ -56,6 +72,7 @@ export const OwnerListView: React.FC<OwnerListViewProps> = ({
   const [selectedBhk, setSelectedBhk] = useState<string>('All');
   const [selectedStaff, setSelectedStaff] = useState<string>('All');
   const [contactFilter, setContactFilter] = useState<'All' | 'Contacted' | 'Uncontacted'>('All');
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
 
   // Pagination & Sorting
   const [currentPage, setCurrentPage] = useState(1);
@@ -254,27 +271,44 @@ export const OwnerListView: React.FC<OwnerListViewProps> = ({
         </div>
 
         <div className="flex items-center space-x-2.5">
-          <button
-            onClick={() => handleExportData('excel')}
-            className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-lg border border-slate-300 transition-colors shadow-2xs"
-            title="Export filtered records to Excel"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span>Export Excel</span>
-          </button>
-          <button
-            onClick={onOpenImport}
-            className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs rounded-lg border border-slate-300 transition-colors"
-          >
-            <span>Import Excel/CSV</span>
-          </button>
-          <button
-            onClick={onOpenAddOwner}
-            className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-all shadow-xs"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Add Owner</span>
-          </button>
+          {owners.length > 0 && canResetDb && (
+            <button
+              onClick={() => setShowClearConfirmModal(true)}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs rounded-lg border border-rose-200 transition-colors shadow-2xs"
+              title="Remove demo data to import clean database"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span>Clear Demo Data</span>
+            </button>
+          )}
+          {canExportOwner && (
+            <button
+              onClick={() => handleExportData('excel')}
+              disabled={owners.length === 0}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-lg border border-slate-300 transition-colors shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Export filtered records to Excel"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Export Excel</span>
+            </button>
+          )}
+          {canImportData && (
+            <button
+              onClick={onOpenImport}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs rounded-lg border border-slate-300 transition-colors"
+            >
+              <span>Import Excel/CSV</span>
+            </button>
+          )}
+          {canCreateOwner && (
+            <button
+              onClick={onOpenAddOwner}
+              className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-all shadow-xs"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Add Owner</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -566,10 +600,47 @@ export const OwnerListView: React.FC<OwnerListViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {paginatedOwners.length === 0 ? (
+              {owners.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-16 text-center text-slate-500">
+                    <div className="max-w-md mx-auto space-y-4">
+                      <div className="h-12 w-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto border border-blue-100 shadow-2xs">
+                        <Building className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900">Database Empty — Ready for Your Data</h3>
+                        <p className="text-xs text-slate-500 mt-1">
+                          No demo data in the system. Import your Excel or CSV file containing 5,000+ Prestige property owner records, or register your first property manually.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                        <button
+                          onClick={onOpenImport}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center space-x-1.5"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          <span>+ Import Excel / CSV File</span>
+                        </button>
+                        <button
+                          onClick={onOpenAddOwner}
+                          className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl border border-slate-200 transition-colors"
+                        >
+                          <span>Add Single Owner</span>
+                        </button>
+                        <button
+                          onClick={resetToDemoData}
+                          className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium rounded-xl border border-slate-200 transition-colors"
+                        >
+                          <span>Load Sample Demo Records</span>
+                        </button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              ) : paginatedOwners.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-slate-400 text-xs">
-                    No owners found matching your criteria. Try adjusting your search query or filters.
+                    No owners found matching your filter criteria. Try clearing your search query or reset filters.
                   </td>
                 </tr>
               ) : (
@@ -618,12 +689,12 @@ export const OwnerListView: React.FC<OwnerListViewProps> = ({
                       {/* Contact Info */}
                       <td className="py-3 px-4">
                         <div className="flex items-center space-x-1.5 font-mono text-slate-800 font-semibold">
-                          <span>{owner.primaryPhone}</span>
+                          <span>{maskPhone(owner.primaryPhone)}</span>
                         </div>
                         {visibleColumns.alternatePhones && (owner.alternatePhone1 || owner.alternatePhone2) && (
                           <div className="text-[10px] text-slate-400 font-mono mt-0.5 space-x-1">
-                            {owner.alternatePhone1 && <span>Alt1: {owner.alternatePhone1}</span>}
-                            {owner.alternatePhone2 && <span>Alt2: {owner.alternatePhone2}</span>}
+                            {owner.alternatePhone1 && <span>Alt1: {maskPhone(owner.alternatePhone1)}</span>}
+                            {owner.alternatePhone2 && <span>Alt2: {maskPhone(owner.alternatePhone2)}</span>}
                           </div>
                         )}
                         {visibleColumns.email && owner.email && (
@@ -792,6 +863,45 @@ export const OwnerListView: React.FC<OwnerListViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Clear Demo Data Confirmation Modal */}
+      {showClearConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="h-12 w-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="h-6 w-6" />
+            </div>
+            
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-slate-900">Clear All Demo Records?</h3>
+              <p className="text-xs text-slate-500">
+                This will remove all current records, buyers, tenants, listings, and leads so you can import your clean 5,000+ Excel/CSV owner spreadsheet.
+              </p>
+              <p className="text-[11px] text-slate-400 mt-2">
+                (You can always restore sample demo data at any time from Settings).
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-3 pt-2">
+              <button
+                onClick={() => setShowClearConfirmModal(false)}
+                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  clearAllData();
+                  setShowClearConfirmModal(false);
+                }}
+                className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
+              >
+                Yes, Clear All Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

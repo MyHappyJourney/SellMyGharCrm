@@ -8,18 +8,209 @@ import {
   Activity, 
   FollowUpTask, 
   User, 
+  Role,
   CommunicationTemplate, 
   ScoringRule,
   SaleLead,
   RentalLead
 } from '../types';
 
+export const INITIAL_ROLES: Role[] = [
+  {
+    id: 'role-super-admin',
+    name: 'Super Admin',
+    description: 'Unrestricted full access to all CRM databases, user management, role policies, import/export, and data wipes.',
+    isSystem: true,
+    color: 'blue',
+    permissions: {
+      owners: { view: 'all', create: true, edit: true, delete: true, export: true, viewUnmaskedPhone: true },
+      telecaller: { access: true, callAndLog: true, qualifyLeads: true, reassignLeads: true },
+      buyers: { view: 'all', create: true, edit: true, delete: true },
+      tenants: { view: 'all', create: true, edit: true, delete: true },
+      listings: { view: true, create: true, edit: true, verify: true, publish: true, delete: true },
+      deals: { view: 'all', managePipeline: true, recordRevenue: true, closeDeals: true },
+      admin: { importData: true, exportData: true, manageUsers: true, manageRoles: true, manageScoringRules: true, viewAuditLogs: true, clearOrResetDatabase: true }
+    }
+  },
+  {
+    id: 'role-sales-manager',
+    name: 'Sales Manager',
+    description: 'High-level oversight of team deals, revenue pipelines, lead distributions, verified inventory, and telecalling performance.',
+    isSystem: true,
+    color: 'purple',
+    permissions: {
+      owners: { view: 'all', create: true, edit: true, delete: false, export: true, viewUnmaskedPhone: true },
+      telecaller: { access: true, callAndLog: true, qualifyLeads: true, reassignLeads: true },
+      buyers: { view: 'all', create: true, edit: true, delete: true },
+      tenants: { view: 'all', create: true, edit: true, delete: true },
+      listings: { view: true, create: true, edit: true, verify: true, publish: true, delete: false },
+      deals: { view: 'all', managePipeline: true, recordRevenue: true, closeDeals: true },
+      admin: { importData: true, exportData: true, manageUsers: true, manageRoles: false, manageScoringRules: true, viewAuditLogs: true, clearOrResetDatabase: false }
+    }
+  },
+  {
+    id: 'role-telecaller',
+    name: 'Senior Telecaller / Lead Specialist',
+    description: 'Dedicated telecalling queue access, owner verification, call disposition logging, lead scoring, and appointment scheduling.',
+    isSystem: true,
+    color: 'emerald',
+    permissions: {
+      owners: { view: 'all', create: true, edit: true, delete: false, export: false, viewUnmaskedPhone: true },
+      telecaller: { access: true, callAndLog: true, qualifyLeads: true, reassignLeads: false },
+      buyers: { view: 'assigned', create: true, edit: true, delete: false },
+      tenants: { view: 'assigned', create: true, edit: true, delete: false },
+      listings: { view: true, create: false, edit: false, verify: false, publish: false, delete: false },
+      deals: { view: 'assigned', managePipeline: false, recordRevenue: false, closeDeals: false },
+      admin: { importData: false, exportData: false, manageUsers: false, manageRoles: false, manageScoringRules: false, viewAuditLogs: false, clearOrResetDatabase: false }
+    }
+  },
+  {
+    id: 'role-field-agent',
+    name: 'Field Relationship Agent',
+    description: 'Manages physical site visits, property inspections, negotiation with buyers/tenants, and deal closings.',
+    isSystem: true,
+    color: 'amber',
+    permissions: {
+      owners: { view: 'assigned', create: true, edit: true, delete: false, export: false, viewUnmaskedPhone: true },
+      telecaller: { access: true, callAndLog: true, qualifyLeads: true, reassignLeads: false },
+      buyers: { view: 'all', create: true, edit: true, delete: false },
+      tenants: { view: 'all', create: true, edit: true, delete: false },
+      listings: { view: true, create: true, edit: true, verify: false, publish: false, delete: false },
+      deals: { view: 'assigned', managePipeline: true, recordRevenue: true, closeDeals: true },
+      admin: { importData: false, exportData: false, manageUsers: false, manageRoles: false, manageScoringRules: false, viewAuditLogs: false, clearOrResetDatabase: false }
+    }
+  },
+  {
+    id: 'role-inventory-mgr',
+    name: 'Inventory & Listing Coordinator',
+    description: 'Manages property inventory, photography verification, pricing audits, portal listings, and buyer matching.',
+    isSystem: true,
+    color: 'indigo',
+    permissions: {
+      owners: { view: 'all', create: true, edit: true, delete: false, export: false, viewUnmaskedPhone: false },
+      telecaller: { access: false, callAndLog: false, qualifyLeads: false, reassignLeads: false },
+      buyers: { view: 'all', create: false, edit: false, delete: false },
+      tenants: { view: 'all', create: false, edit: false, delete: false },
+      listings: { view: true, create: true, edit: true, verify: true, publish: true, delete: true },
+      deals: { view: 'none', managePipeline: false, recordRevenue: false, closeDeals: false },
+      admin: { importData: true, exportData: false, manageUsers: false, manageRoles: false, manageScoringRules: false, viewAuditLogs: false, clearOrResetDatabase: false }
+    }
+  },
+  {
+    id: 'role-auditor',
+    name: 'Compliance & Audit Officer',
+    description: 'Read-only surveillance of communication consent, audit logs, privacy compliance, and telecaller activities.',
+    isSystem: true,
+    color: 'slate',
+    permissions: {
+      owners: { view: 'all', create: false, edit: false, delete: false, export: false, viewUnmaskedPhone: false },
+      telecaller: { access: false, callAndLog: false, qualifyLeads: false, reassignLeads: false },
+      buyers: { view: 'all', create: false, edit: false, delete: false },
+      tenants: { view: 'all', create: false, edit: false, delete: false },
+      listings: { view: true, create: false, edit: false, verify: false, publish: false, delete: false },
+      deals: { view: 'all', managePipeline: false, recordRevenue: false, closeDeals: false },
+      admin: { importData: false, exportData: false, manageUsers: false, manageRoles: false, manageScoringRules: false, viewAuditLogs: true, clearOrResetDatabase: false }
+    }
+  },
+  {
+    id: 'role-viewer',
+    name: 'Read-Only Viewer',
+    description: 'Restricted guest / observer access with masked contact numbers and no editing capabilities.',
+    isSystem: true,
+    color: 'cyan',
+    permissions: {
+      owners: { view: 'all', create: false, edit: false, delete: false, export: false, viewUnmaskedPhone: false },
+      telecaller: { access: false, callAndLog: false, qualifyLeads: false, reassignLeads: false },
+      buyers: { view: 'all', create: false, edit: false, delete: false },
+      tenants: { view: 'all', create: false, edit: false, delete: false },
+      listings: { view: true, create: false, edit: false, verify: false, publish: false, delete: false },
+      deals: { view: 'all', managePipeline: false, recordRevenue: false, closeDeals: false },
+      admin: { importData: false, exportData: false, manageUsers: false, manageRoles: false, manageScoringRules: false, viewAuditLogs: false, clearOrResetDatabase: false }
+    }
+  }
+];
+
 export const INITIAL_USERS: User[] = [
-  { id: 'usr-1', name: 'Yashwant Keyan (Admin)', email: 'admin@sellmyghar.in', phone: '+91 98450 11223', role: 'Admin' },
-  { id: 'usr-2', name: 'Rahul Sharma', email: 'rahul.s@sellmyghar.in', phone: '+91 98860 44556', role: 'Manager' },
-  { id: 'usr-3', name: 'Priya Venkatesh', email: 'priya.v@sellmyghar.in', phone: '+91 99001 88776', role: 'Sales Agent' },
-  { id: 'usr-4', name: 'Karthik Rao', email: 'karthik.r@sellmyghar.in', phone: '+91 97412 33445', role: 'Telecaller' },
-  { id: 'usr-5', name: 'Ananya Deshmukh', email: 'ananya.d@sellmyghar.in', phone: '+91 96112 55667', role: 'Marketing' },
+  { 
+    id: 'usr-1', 
+    name: 'Yashwant Keyan', 
+    email: 'yashwantkeyan@gmail.com', 
+    phone: '+91 98450 11223', 
+    roleId: 'role-super-admin',
+    role: 'Super Admin',
+    department: 'Management',
+    status: 'Active',
+    assignedProjects: ['All Prestige Projects'],
+    branch: 'Bengaluru Central HQ',
+    designation: 'Managing Director & CRM Administrator',
+    commissionPercentage: 100,
+    lastLogin: 'Just now',
+    createdAt: '2026-01-01'
+  },
+  { 
+    id: 'usr-2', 
+    name: 'Rahul Sharma', 
+    email: 'rahul.sharma@sellmyghar.in', 
+    phone: '+91 98860 44556', 
+    roleId: 'role-sales-manager',
+    role: 'Sales Manager',
+    department: 'Sales',
+    status: 'Active',
+    assignedProjects: ['Prestige Shantiniketan', 'Prestige Lakeside Habitat', 'Prestige Golfshire'],
+    branch: 'Whitefield Regional Hub',
+    designation: 'VP of Sales & Resales',
+    commissionPercentage: 15,
+    lastLogin: '2 hours ago',
+    createdAt: '2026-01-15'
+  },
+  { 
+    id: 'usr-3', 
+    name: 'Priya Venkatesh', 
+    email: 'priya.v@sellmyghar.in', 
+    phone: '+91 99001 88776', 
+    roleId: 'role-field-agent',
+    role: 'Field Relationship Agent',
+    department: 'Field Operations',
+    status: 'Active',
+    assignedProjects: ['Prestige Falcon City', 'Prestige Jindal City', 'Prestige Finsbury Park'],
+    branch: 'South Bengaluru Branch',
+    designation: 'Senior Property Advisor',
+    commissionPercentage: 25,
+    lastLogin: 'Today, 10:15 AM',
+    createdAt: '2026-02-01'
+  },
+  { 
+    id: 'usr-4', 
+    name: 'Karthik Rao', 
+    email: 'karthik.r@sellmyghar.in', 
+    phone: '+91 97412 33445', 
+    roleId: 'role-telecaller',
+    role: 'Senior Telecaller / Lead Specialist',
+    department: 'Telecalling',
+    status: 'Active',
+    assignedProjects: ['All Prestige Projects'],
+    branch: 'Bengaluru Central HQ',
+    designation: 'Lead Qualification Specialist',
+    commissionPercentage: 5,
+    lastLogin: 'Today, 09:00 AM',
+    createdAt: '2026-02-10'
+  },
+  { 
+    id: 'usr-5', 
+    name: 'Ananya Deshmukh', 
+    email: 'ananya.d@sellmyghar.in', 
+    phone: '+91 96112 55667', 
+    roleId: 'role-inventory-mgr',
+    role: 'Inventory & Listing Coordinator',
+    department: 'Inventory & Listings',
+    status: 'Active',
+    assignedProjects: ['Prestige Tech Cloud', 'Prestige Kingfisher Towers', 'Prestige Golfshire'],
+    branch: 'North Bengaluru Office',
+    designation: 'Listing & Portal Specialist',
+    commissionPercentage: 0,
+    lastLogin: 'Yesterday',
+    createdAt: '2026-02-20'
+  }
 ];
 
 export const INITIAL_SCORING_RULES: ScoringRule[] = [

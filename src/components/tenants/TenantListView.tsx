@@ -39,7 +39,15 @@ export const TenantListView: React.FC<TenantListViewProps> = ({ onNavigateToMatc
   const filteredTenants = tenants.filter(t => {
     if (!searchTerm) return true;
     const q = searchTerm.toLowerCase();
-    return t.name.toLowerCase().includes(q) || t.phone.includes(q) || (t.companyName && t.companyName.toLowerCase().includes(q));
+    const nameMatch = t.name ? t.name.toLowerCase().includes(q) : false;
+    const phoneMatch = t.phone ? t.phone.includes(q) : false;
+    const companyMatch = t.companyName ? t.companyName.toLowerCase().includes(q) : false;
+    const projectMatch = Array.isArray(t.preferredProjects)
+      ? t.preferredProjects.some(p => p.toLowerCase().includes(q))
+      : typeof (t as any).preferredProject === 'string'
+        ? (t as any).preferredProject.toLowerCase().includes(q)
+        : false;
+    return nameMatch || phoneMatch || companyMatch || projectMatch;
   });
 
   const handleAddTenant = (e: React.FormEvent) => {
@@ -116,65 +124,87 @@ export const TenantListView: React.FC<TenantListViewProps> = ({ onNavigateToMatc
       {/* Tenant Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredTenants.length === 0 ? (
-          <div className="col-span-full py-12 text-center text-slate-400 text-xs">
+          <div className="col-span-full py-12 text-center text-slate-400 text-xs bg-white rounded-2xl border border-slate-200">
             No tenants found. Click "Add Tenant" to register an inquiry.
           </div>
         ) : (
-          filteredTenants.map((tenant) => (
-            <div key={tenant.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-xs space-y-3">
-              <div className="flex items-start justify-between">
+          filteredTenants.map((tenant) => {
+            const projectList = Array.isArray(tenant.preferredProjects) && tenant.preferredProjects.length > 0
+              ? tenant.preferredProjects
+              : (tenant as any).preferredProject
+                ? [(tenant as any).preferredProject]
+                : [];
+            
+            const bhkText = Array.isArray(tenant.preferredBhk)
+              ? tenant.preferredBhk.join(', ')
+              : (tenant as any).preferredBhk || 'Any BHK';
+
+            const budgetDisplay = tenant.budgetMax != null
+              ? `₹${Number(tenant.budgetMax).toLocaleString('en-IN')}/mo`
+              : (tenant as any).budget != null
+                ? `₹${Number((tenant as any).budget).toLocaleString('en-IN')}/mo`
+                : 'Flexible';
+
+            return (
+              <div key={tenant.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-xs space-y-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-sm">{tenant.name}</h3>
+                    {tenant.companyName && (
+                      <p className="text-[11px] text-slate-500 flex items-center space-x-1 mt-0.5">
+                        <Briefcase className="h-3 w-3 text-slate-400" />
+                        <span>{tenant.companyName}</span>
+                      </p>
+                    )}
+                  </div>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                    {tenant.tenantCategory || 'Screened Tenant'}
+                  </span>
+                </div>
+
+                <div className="p-2.5 bg-slate-50 rounded-xl space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Max Budget:</span>
+                    <span className="font-bold text-emerald-950">{budgetDisplay}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Configuration:</span>
+                    <span className="font-semibold text-slate-800">{bhkText}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Move-in Date:</span>
+                    <span className="text-slate-700 font-medium">{tenant.moveInDate || 'Flexible'}</span>
+                  </div>
+                </div>
+
                 <div>
-                  <h3 className="font-bold text-slate-900 text-sm">{tenant.name}</h3>
-                  {tenant.companyName && (
-                    <p className="text-[11px] text-slate-500 flex items-center space-x-1 mt-0.5">
-                      <Briefcase className="h-3 w-3 text-slate-400" />
-                      <span>{tenant.companyName}</span>
-                    </p>
-                  )}
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Target Communities:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {projectList.length > 0 ? (
+                      projectList.map(p => (
+                        <span key={p} className="text-[10px] font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                          {p}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-[10px] text-slate-400">All Prestige Projects</span>
+                    )}
+                  </div>
                 </div>
-                <span className="text-[10px] bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded-full border border-emerald-200">
-                  {tenant.tenantCategory}
-                </span>
-              </div>
 
-              <div className="p-2.5 bg-slate-50 rounded-xl space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Max Budget:</span>
-                  <span className="font-bold text-emerald-950">₹{tenant.budgetMax.toLocaleString('en-IN')}/mo</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Configuration:</span>
-                  <span className="font-semibold text-slate-800">{tenant.preferredBhk.join(', ')}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Move-in Date:</span>
-                  <span className="text-slate-700 font-medium">{tenant.moveInDate}</span>
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <span className="text-[10px] text-slate-400">Agent: {tenant.assignedAgent || 'Unassigned'}</span>
+                  <button
+                    onClick={onNavigateToMatcher}
+                    className="text-emerald-700 hover:text-emerald-800 font-bold text-xs flex items-center space-x-1"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    <span>Match Rental Units →</span>
+                  </button>
                 </div>
               </div>
-
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Target Communities:</p>
-                <div className="flex flex-wrap gap-1">
-                  {tenant.preferredProjects.map(p => (
-                    <span key={p} className="text-[10px] font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                      {p}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="text-[10px] text-slate-400">Agent: {tenant.assignedAgent}</span>
-                <button
-                  onClick={onNavigateToMatcher}
-                  className="text-emerald-700 hover:text-emerald-800 font-bold text-xs flex items-center space-x-1"
-                >
-                  <Sparkles className="h-3 w-3" />
-                  <span>Match Rental Units →</span>
-                </button>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 

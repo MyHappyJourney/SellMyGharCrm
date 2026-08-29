@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Owner, 
   Property, 
@@ -9,6 +9,8 @@ import {
   Activity, 
   FollowUpTask, 
   User, 
+  Role,
+  RolePermissions,
   ScoringRule, 
   CommunicationTemplate, 
   AuditLog, 
@@ -30,6 +32,7 @@ import {
   DEMO_SALE_LEADS, 
   DEMO_RENTAL_LEADS, 
   INITIAL_USERS, 
+  INITIAL_ROLES,
   INITIAL_SCORING_RULES, 
   INITIAL_TEMPLATES 
 } from '../data/demoData';
@@ -49,6 +52,7 @@ interface CrmContextType {
   rentalLeads: RentalLead[];
   currentUser: User;
   users: User[];
+  roles: Role[];
   scoringRules: ScoringRule[];
   templates: CommunicationTemplate[];
   auditLogs: AuditLog[];
@@ -98,6 +102,16 @@ interface CrmContextType {
   resetToDemoData: () => void;
   clearAllData: () => void;
   
+  // User & RBAC Management
+  addUser: (user: Omit<User, 'id' | 'createdAt'>) => User;
+  updateUser: (id: string, updates: Partial<User>) => void;
+  deleteUser: (id: string) => void;
+  addRole: (role: Omit<Role, 'id' | 'isSystem'>) => Role;
+  updateRole: (id: string, updates: Partial<Role>) => void;
+  deleteRole: (id: string) => void;
+  getRoleById: (roleId: string) => Role | undefined;
+  hasPermission: (module: keyof RolePermissions, action: string) => boolean;
+
   updateScoringRule: (id: string, updates: Partial<ScoringRule>) => void;
   updateTemplate: (id: string, updates: Partial<CommunicationTemplate>) => void;
   setCurrentUser: (user: User) => void;
@@ -107,21 +121,24 @@ interface CrmContextType {
 const CrmContext = createContext<CrmContextType | undefined>(undefined);
 
 const STORAGE_KEYS = {
-  OWNERS: 'smg_crm_owners_v1',
-  PROPERTIES: 'smg_crm_properties_v1',
-  BUYERS: 'smg_crm_buyers_v1',
-  TENANTS: 'smg_crm_tenants_v1',
-  LISTINGS: 'smg_crm_listings_v1',
-  TRANSACTIONS: 'smg_crm_transactions_v1',
-  ACTIVITIES: 'smg_crm_activities_v1',
-  FOLLOWUPS: 'smg_crm_followups_v1',
-  SALE_LEADS: 'smg_crm_sale_leads_v1',
-  RENTAL_LEADS: 'smg_crm_rental_leads_v1',
-  USERS: 'smg_crm_users_v1',
-  SCORING_RULES: 'smg_crm_scoring_rules_v1',
-  TEMPLATES: 'smg_crm_templates_v1',
-  AUDIT_LOGS: 'smg_crm_audit_logs_v1',
-  LAST_REPORT: 'smg_crm_last_report_v1'
+  OWNERS: 'smg_crm_owners_v2',
+  PROPERTIES: 'smg_crm_properties_v2',
+  BUYERS: 'smg_crm_buyers_v2',
+  TENANTS: 'smg_crm_tenants_v2',
+  LISTINGS: 'smg_crm_listings_v2',
+  TRANSACTIONS: 'smg_crm_transactions_v2',
+  ACTIVITIES: 'smg_crm_activities_v2',
+  FOLLOWUPS: 'smg_crm_followups_v2',
+  SALE_LEADS: 'smg_crm_sale_leads_v2',
+  RENTAL_LEADS: 'smg_crm_rental_leads_v2',
+  USERS: 'smg_crm_users_v2',
+  ROLES: 'smg_crm_roles_v2',
+  CURRENT_USER_ID: 'smg_crm_current_user_id_v2',
+  SCORING_RULES: 'smg_crm_scoring_rules_v2',
+  TEMPLATES: 'smg_crm_templates_v2',
+  AUDIT_LOGS: 'smg_crm_audit_logs_v2',
+  LAST_REPORT: 'smg_crm_last_report_v2',
+  INIT_FLAG: 'smg_crm_clean_init_done_v2'
 };
 
 export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -137,18 +154,20 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [saleLeads, setSaleLeads] = useState<SaleLead[]>([]);
   const [rentalLeads, setRentalLeads] = useState<RentalLead[]>([]);
   const [users, setUsers] = useState<User[]>(INITIAL_USERS);
+  const [roles, setRoles] = useState<Role[]>(INITIAL_ROLES);
   const [currentUser, setCurrentUser] = useState<User>(INITIAL_USERS[0]);
   const [scoringRules, setScoringRules] = useState<ScoringRule[]>(INITIAL_SCORING_RULES);
   const [templates, setTemplates] = useState<CommunicationTemplate[]>(INITIAL_TEMPLATES);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [lastImportReport, setLastImportReport] = useState<ImportSummaryReport | null>(null);
 
-  // Initialize data from localStorage or seed with DEMO data
+  // Initialize data: Default is 0 data as requested ("Give me a software with 0 data, i will import my data")
   useEffect(() => {
     try {
-      const storedOwners = localStorage.getItem(STORAGE_KEYS.OWNERS);
-      if (storedOwners) {
-        setOwners(JSON.parse(storedOwners));
+      const isInitialized = localStorage.getItem(STORAGE_KEYS.INIT_FLAG);
+      
+      if (isInitialized) {
+        setOwners(JSON.parse(localStorage.getItem(STORAGE_KEYS.OWNERS) || '[]'));
         setProperties(JSON.parse(localStorage.getItem(STORAGE_KEYS.PROPERTIES) || '[]'));
         setBuyers(JSON.parse(localStorage.getItem(STORAGE_KEYS.BUYERS) || '[]'));
         setTenants(JSON.parse(localStorage.getItem(STORAGE_KEYS.TENANTS) || '[]'));
@@ -158,47 +177,68 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setFollowUps(JSON.parse(localStorage.getItem(STORAGE_KEYS.FOLLOWUPS) || '[]'));
         setSaleLeads(JSON.parse(localStorage.getItem(STORAGE_KEYS.SALE_LEADS) || '[]'));
         setRentalLeads(JSON.parse(localStorage.getItem(STORAGE_KEYS.RENTAL_LEADS) || '[]'));
-        setUsers(JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || JSON.stringify(INITIAL_USERS)));
+        
+        const storedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
+        const parsedUsers: User[] = storedUsers ? JSON.parse(storedUsers) : INITIAL_USERS;
+        setUsers(parsedUsers);
+
+        const storedRoles = localStorage.getItem(STORAGE_KEYS.ROLES);
+        const parsedRoles: Role[] = storedRoles ? JSON.parse(storedRoles) : INITIAL_ROLES;
+        setRoles(parsedRoles);
+
+        const currentUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
+        const matchedUser = parsedUsers.find(u => u.id === currentUserId) || parsedUsers[0] || INITIAL_USERS[0];
+        setCurrentUser(matchedUser);
+
         setScoringRules(JSON.parse(localStorage.getItem(STORAGE_KEYS.SCORING_RULES) || JSON.stringify(INITIAL_SCORING_RULES)));
         setTemplates(JSON.parse(localStorage.getItem(STORAGE_KEYS.TEMPLATES) || JSON.stringify(INITIAL_TEMPLATES)));
         setAuditLogs(JSON.parse(localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS) || '[]'));
         const report = localStorage.getItem(STORAGE_KEYS.LAST_REPORT);
         if (report) setLastImportReport(JSON.parse(report));
       } else {
-        // First load: seed with Demo Data
-        setOwners(DEMO_OWNERS);
-        setProperties(DEMO_PROPERTIES);
-        setBuyers(DEMO_BUYERS);
-        setTenants(DEMO_TENANTS);
-        setListings(DEMO_LISTINGS);
-        setTransactions(DEMO_TRANSACTIONS);
-        setActivities(DEMO_ACTIVITIES);
-        setFollowUps(DEMO_FOLLOWUPS);
-        setSaleLeads(DEMO_SALE_LEADS);
-        setRentalLeads(DEMO_RENTAL_LEADS);
+        // Clean Initial State: 0 CRM Records (ready for user's own spreadsheet import)
+        setOwners([]);
+        setProperties([]);
+        setBuyers([]);
+        setTenants([]);
+        setListings([]);
+        setTransactions([]);
+        setActivities([]);
+        setFollowUps([]);
+        setSaleLeads([]);
+        setRentalLeads([]);
+        setUsers(INITIAL_USERS);
+        setRoles(INITIAL_ROLES);
+        setCurrentUser(INITIAL_USERS[0]);
+        setScoringRules(INITIAL_SCORING_RULES);
+        setTemplates(INITIAL_TEMPLATES);
         setAuditLogs([
           {
-            id: 'aud-1',
+            id: 'aud-clean-start',
             timestamp: new Date().toISOString(),
-            user: 'System',
+            user: INITIAL_USERS[0].name,
             action: 'Record created',
-            details: 'CRM initialized with 20 demo Prestige owner records, listings, and pipelines.',
-            entityType: 'Owner'
+            details: 'CRM deployed with 0 records in Clean Slate mode. Ready for Excel / CSV data import.',
+            entityType: 'User'
           }
         ]);
+        localStorage.setItem(STORAGE_KEYS.INIT_FLAG, 'true');
       }
     } catch (e) {
       console.error('Error loading CRM state:', e);
-      setOwners(DEMO_OWNERS);
-      setProperties(DEMO_PROPERTIES);
-      setBuyers(DEMO_BUYERS);
-      setTenants(DEMO_TENANTS);
-      setListings(DEMO_LISTINGS);
-      setTransactions(DEMO_TRANSACTIONS);
-      setActivities(DEMO_ACTIVITIES);
-      setFollowUps(DEMO_FOLLOWUPS);
-      setSaleLeads(DEMO_SALE_LEADS);
-      setRentalLeads(DEMO_RENTAL_LEADS);
+      setOwners([]);
+      setProperties([]);
+      setBuyers([]);
+      setTenants([]);
+      setListings([]);
+      setTransactions([]);
+      setActivities([]);
+      setFollowUps([]);
+      setSaleLeads([]);
+      setRentalLeads([]);
+      setUsers(INITIAL_USERS);
+      setRoles(INITIAL_ROLES);
+      setCurrentUser(INITIAL_USERS[0]);
     } finally {
       setIsLoading(false);
     }
@@ -208,6 +248,7 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (isLoading) return;
     try {
+      localStorage.setItem(STORAGE_KEYS.INIT_FLAG, 'true');
       localStorage.setItem(STORAGE_KEYS.OWNERS, JSON.stringify(owners));
       localStorage.setItem(STORAGE_KEYS.PROPERTIES, JSON.stringify(properties));
       localStorage.setItem(STORAGE_KEYS.BUYERS, JSON.stringify(buyers));
@@ -219,6 +260,8 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(STORAGE_KEYS.SALE_LEADS, JSON.stringify(saleLeads));
       localStorage.setItem(STORAGE_KEYS.RENTAL_LEADS, JSON.stringify(rentalLeads));
       localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+      localStorage.setItem(STORAGE_KEYS.ROLES, JSON.stringify(roles));
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, currentUser.id);
       localStorage.setItem(STORAGE_KEYS.SCORING_RULES, JSON.stringify(scoringRules));
       localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
       localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs));
@@ -230,7 +273,7 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [
     owners, properties, buyers, tenants, listings, transactions, 
-    activities, followUps, saleLeads, rentalLeads, users, scoringRules, 
+    activities, followUps, saleLeads, rentalLeads, users, roles, currentUser, scoringRules, 
     templates, auditLogs, lastImportReport, isLoading
   ]);
 
@@ -247,12 +290,132 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAuditLogs(prev => [newLog, ...prev.slice(0, 499)]); // Keep last 500 logs
   }, [currentUser]);
 
+  // Helper to retrieve Role definition
+  const getRoleById = useCallback((roleId: string): Role | undefined => {
+    return roles.find(r => r.id === roleId) || roles.find(r => r.name.toLowerCase() === roleId.toLowerCase()) || roles[0];
+  }, [roles]);
+
+  // Granular Permission Evaluation Helper
+  const hasPermission = useCallback((module: keyof RolePermissions, action: string): boolean => {
+    const userRole = getRoleById(currentUser.roleId) || roles.find(r => r.id === 'role-super-admin') || roles[0];
+    if (!userRole) return true;
+    if (userRole.id === 'role-super-admin' || userRole.name === 'Super Admin') return true;
+
+    const modulePerms = userRole.permissions[module] as any;
+    if (!modulePerms) return false;
+
+    if (action in modulePerms) {
+      const val = modulePerms[action];
+      if (typeof val === 'boolean') return val;
+      if (val === 'all' || val === 'assigned') return true;
+      if (val === 'none') return false;
+    }
+    return true;
+  }, [currentUser, roles, getRoleById]);
+
+  // User Management
+  const addUser = useCallback((userData: Omit<User, 'id' | 'createdAt'>): User => {
+    const newId = `usr-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const roleObj = getRoleById(userData.roleId);
+    const newUser: User = {
+      ...userData,
+      id: newId,
+      role: roleObj ? roleObj.name : userData.role,
+      createdAt: new Date().toISOString().split('T')[0]
+    };
+    setUsers(prev => [...prev, newUser]);
+    logAudit('Permission changed', `Created team user "${newUser.name}" with role "${newUser.role}" (${newUser.department})`, newId, 'User');
+    return newUser;
+  }, [getRoleById, logAudit]);
+
+  const updateUser = useCallback((id: string, updates: Partial<User>) => {
+    setUsers(prev => prev.map(u => {
+      if (u.id === id) {
+        const updated = { ...u, ...updates };
+        if (updates.roleId) {
+          const roleObj = getRoleById(updates.roleId);
+          if (roleObj) updated.role = roleObj.name;
+        }
+        return updated;
+      }
+      return u;
+    }));
+
+    // If updating current active user, reflect immediately
+    if (currentUser.id === id) {
+      setCurrentUser(prev => {
+        const updated = { ...prev, ...updates };
+        if (updates.roleId) {
+          const roleObj = getRoleById(updates.roleId);
+          if (roleObj) updated.role = roleObj.name;
+        }
+        return updated;
+      });
+    }
+
+    logAudit('Permission changed', `Updated user details for "${updates.name || id}"`, id, 'User');
+  }, [currentUser, getRoleById, logAudit]);
+
+  const deleteUser = useCallback((id: string) => {
+    const target = users.find(u => u.id === id);
+    if (users.length <= 1) {
+      alert('Cannot delete the last remaining user.');
+      return;
+    }
+    setUsers(prev => prev.filter(u => u.id !== id));
+    if (currentUser.id === id) {
+      const fallback = users.find(u => u.id !== id) || INITIAL_USERS[0];
+      setCurrentUser(fallback);
+    }
+    logAudit('Record deleted', `Removed user ${target?.name || id}`, id, 'User');
+  }, [users, currentUser, logAudit]);
+
+  // Role Management
+  const addRole = useCallback((roleData: Omit<Role, 'id' | 'isSystem'>): Role => {
+    const newId = `role-custom-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const newRole: Role = {
+      ...roleData,
+      id: newId,
+      isSystem: false,
+      createdAt: new Date().toISOString().split('T')[0],
+      updatedAt: new Date().toISOString().split('T')[0]
+    };
+    setRoles(prev => [...prev, newRole]);
+    logAudit('Permission changed', `Created custom role policy "${newRole.name}"`);
+    return newRole;
+  }, [logAudit]);
+
+  const updateRole = useCallback((id: string, updates: Partial<Role>) => {
+    setRoles(prev => prev.map(r => r.id === id ? { 
+      ...r, 
+      ...updates, 
+      updatedAt: new Date().toISOString().split('T')[0] 
+    } : r));
+    logAudit('Permission changed', `Updated permission matrix for role "${updates.name || id}"`);
+  }, [logAudit]);
+
+  const deleteRole = useCallback((id: string) => {
+    const target = roles.find(r => r.id === id);
+    if (target?.isSystem) {
+      alert('System default roles cannot be deleted.');
+      return;
+    }
+    // Reassign users with this role to Viewer
+    const fallbackRole = roles.find(r => r.id === 'role-viewer') || roles[0];
+    setUsers(prev => prev.map(u => u.roleId === id ? { ...u, roleId: fallbackRole.id, role: fallbackRole.name } : u));
+    setRoles(prev => prev.filter(r => r.id !== id));
+    logAudit('Permission changed', `Deleted role "${target?.name || id}" and reassigned affected users to ${fallbackRole.name}`);
+  }, [roles, logAudit]);
+
   const addOwner = useCallback((ownerData: Omit<Owner, 'id' | 'createdAt' | 'updatedAt'>): Owner => {
     const now = new Date().toISOString().split('T')[0];
-    const newId = `own-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-    
-    // Calculate lead score
-    const scoreResult = calculateLeadScore(ownerData, scoringRules);
+    const newId = `own-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const scoreResult = calculateLeadScore({
+      ...ownerData,
+      id: newId,
+      createdAt: now,
+      updatedAt: now
+    } as Owner, scoringRules);
 
     const newOwner: Owner = {
       ...ownerData,
@@ -264,44 +427,39 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setOwners(prev => [newOwner, ...prev]);
-    logAudit('Record created', `Created owner record for ${newOwner.name} (${newOwner.project}, ${newOwner.flatNumber})`, newId, 'Owner');
+    logAudit('Record created', `Created owner record for ${newOwner.name} (${newOwner.project} - ${newOwner.flatNumber})`, newId, 'Owner');
     return newOwner;
   }, [scoringRules, logAudit]);
 
   const updateOwner = useCallback((id: string, updates: Partial<Owner>) => {
-    setOwners(prev => prev.map(owner => {
-      if (owner.id === id) {
-        const merged = { ...owner, ...updates, updatedAt: new Date().toISOString().split('T')[0] };
-        const scoreResult = calculateLeadScore(merged, scoringRules);
-        merged.leadScore = scoreResult.score;
-        merged.leadTemperature = scoreResult.temperature;
-        return merged;
+    setOwners(prev => prev.map(o => {
+      if (o.id === id) {
+        const updated = { ...o, ...updates, updatedAt: new Date().toISOString().split('T')[0] };
+        const scoreResult = calculateLeadScore(updated, scoringRules);
+        updated.leadScore = scoreResult.score;
+        updated.leadTemperature = scoreResult.temperature;
+        return updated;
       }
-      return owner;
+      return o;
     }));
-    logAudit('Record edited', `Updated details for owner ID ${id}`, id, 'Owner');
+    logAudit('Record edited', `Updated owner record ${id}`, id, 'Owner');
   }, [scoringRules, logAudit]);
 
   const deleteOwner = useCallback((id: string) => {
-    const target = owners.find(o => o.id === id);
     setOwners(prev => prev.filter(o => o.id !== id));
-    setProperties(prev => prev.filter(p => p.ownerId !== id));
-    setSaleLeads(prev => prev.filter(s => s.ownerId !== id));
-    setRentalLeads(prev => prev.filter(r => r.ownerId !== id));
-    setFollowUps(prev => prev.filter(f => f.ownerId !== id));
-    logAudit('Record deleted', `Deleted owner record for ${target?.name || id}`, id, 'Owner');
-  }, [owners, logAudit]);
+    logAudit('Record deleted', `Deleted owner record ${id}`, id, 'Owner');
+  }, [logAudit]);
 
   const bulkUpdateOwners = useCallback((ids: string[], updates: Partial<Owner>) => {
-    setOwners(prev => prev.map(owner => {
-      if (ids.includes(owner.id)) {
-        const merged = { ...owner, ...updates, updatedAt: new Date().toISOString().split('T')[0] };
-        const scoreResult = calculateLeadScore(merged, scoringRules);
-        merged.leadScore = scoreResult.score;
-        merged.leadTemperature = scoreResult.temperature;
-        return merged;
+    setOwners(prev => prev.map(o => {
+      if (ids.includes(o.id)) {
+        const updated = { ...o, ...updates, updatedAt: new Date().toISOString().split('T')[0] };
+        const scoreResult = calculateLeadScore(updated, scoringRules);
+        updated.leadScore = scoreResult.score;
+        updated.leadTemperature = scoreResult.temperature;
+        return updated;
       }
-      return owner;
+      return o;
     }));
     logAudit('Record edited', `Bulk updated ${ids.length} owner records`);
   }, [scoringRules, logAudit]);
@@ -311,7 +469,6 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logAudit('Record deleted', `Bulk deleted ${ids.length} owner records`);
   }, [logAudit]);
 
-  // Qualification Workflow
   const qualifyOwner = useCallback((id: string, qualification: {
     propertyStatus: Owner['propertyStatus'];
     saleIntent?: Owner['saleIntent'];
@@ -320,178 +477,55 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     rentalInfo?: Owner['rentalInfo'];
     notes?: string;
   }) => {
-    setOwners(prev => prev.map(owner => {
-      if (owner.id === id) {
-        const updatedSaleInfo = qualification.saleInfo 
-          ? { ...owner.saleInfo, ...qualification.saleInfo } 
-          : owner.saleInfo;
-        const updatedRentalInfo = qualification.rentalInfo 
-          ? { ...owner.rentalInfo, ...qualification.rentalInfo } 
-          : owner.rentalInfo;
+    const owner = owners.find(o => o.id === id);
+    if (!owner) return;
 
-        const merged: Owner = {
-          ...owner,
-          propertyStatus: qualification.propertyStatus,
-          saleIntent: qualification.saleIntent || owner.saleIntent,
-          rentalIntent: qualification.rentalIntent || owner.rentalIntent,
-          saleInfo: updatedSaleInfo,
-          rentalInfo: updatedRentalInfo,
-          leadStatus: qualification.propertyStatus === 'Self Occupied' ? 'Nurture' : 'Qualified',
-          updatedAt: new Date().toISOString().split('T')[0]
-        };
+    const updates: Partial<Owner> = {
+      propertyStatus: qualification.propertyStatus,
+      saleIntent: qualification.saleIntent || owner.saleIntent,
+      rentalIntent: qualification.rentalIntent || owner.rentalIntent,
+      saleInfo: qualification.saleInfo || owner.saleInfo,
+      rentalInfo: qualification.rentalInfo || owner.rentalInfo,
+      lastContactDate: new Date().toISOString().split('T')[0],
+      leadStatus: 'Qualified'
+    };
 
-        const scoreResult = calculateLeadScore(merged, scoringRules);
-        merged.leadScore = scoreResult.score;
-        merged.leadTemperature = scoreResult.temperature;
+    updateOwner(id, updates);
 
-        // Auto create or update Sale / Rental Pipeline lead
-        if (qualification.saleIntent && qualification.saleIntent !== 'Not Interested') {
-          const existingSaleLead = saleLeads.find(sl => sl.ownerId === id);
-          if (!existingSaleLead) {
-            const newSaleLead: SaleLead = {
-              id: `slead-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-              ownerId: id,
-              stage: qualification.saleInfo?.saleMarketingAuthorization ? 'Mandate/Authorization Obtained' : 'Interested',
-              expectedPrice: qualification.saleInfo?.expectedPrice || 0,
-              minimumPrice: qualification.saleInfo?.minimumAcceptablePrice,
-              leadScore: merged.leadScore,
-              leadTemperature: merged.leadTemperature,
-              assignedAgent: owner.assignedStaff,
-              notes: qualification.notes,
-              createdAt: new Date().toISOString().split('T')[0],
-              updatedAt: new Date().toISOString().split('T')[0]
-            };
-            setSaleLeads(sPrev => [newSaleLead, ...sPrev]);
-          }
-        }
-
-        if (qualification.rentalIntent && qualification.rentalIntent !== 'Not Interested') {
-          const existingRentalLead = rentalLeads.find(rl => rl.ownerId === id);
-          if (!existingRentalLead) {
-            const newRentalLead: RentalLead = {
-              id: `rlead-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-              ownerId: id,
-              stage: qualification.rentalInfo?.rentalMarketingAuthorization ? 'Authorization Obtained' : 'Interested',
-              expectedRent: qualification.rentalInfo?.expectedMonthlyRent || 0,
-              deposit: qualification.rentalInfo?.securityDeposit,
-              leadScore: merged.leadScore,
-              leadTemperature: merged.leadTemperature,
-              assignedAgent: owner.assignedStaff,
-              notes: qualification.notes,
-              createdAt: new Date().toISOString().split('T')[0],
-              updatedAt: new Date().toISOString().split('T')[0]
-            };
-            setRentalLeads(rPrev => [newRentalLead, ...rPrev]);
-          }
-        }
-
-        return merged;
-      }
-      return owner;
-    }));
-
-    // Log Activity
-    const target = owners.find(o => o.id === id);
-    if (target) {
-      const actId = `act-${Date.now()}`;
-      const now = new Date();
-      const newAct: Activity = {
-        id: actId,
-        ownerId: id,
-        type: 'Note',
-        date: now.toISOString().split('T')[0],
-        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        staff: currentUser.name,
-        outcome: `Owner Qualified: ${qualification.propertyStatus} | Sale: ${qualification.saleIntent || 'None'} | Rent: ${qualification.rentalIntent || 'None'}`,
-        notes: qualification.notes || 'Qualification form submitted.',
-        createdAt: now.toISOString()
-      };
-      setActivities(prev => [newAct, ...prev]);
-    }
-
-    logAudit('Lead qualified', `Qualified owner ID ${id} as ${qualification.propertyStatus}`, id, 'Owner');
-  }, [owners, saleLeads, rentalLeads, scoringRules, currentUser, logAudit]);
-
-  const addActivity = useCallback((activityData: Omit<Activity, 'id' | 'createdAt'>): Activity => {
-    const actId = `act-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-    const newAct: Activity = {
-      ...activityData,
-      id: actId,
+    // Also record activity
+    const newActivity: Activity = {
+      id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      ownerId: id,
+      type: 'Phone Call',
+      date: new Date().toISOString().split('T')[0],
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      staff: currentUser.name,
+      outcome: `Qualified as ${qualification.propertyStatus}`,
+      notes: qualification.notes || `Owner qualified. Status: ${qualification.propertyStatus}`,
       createdAt: new Date().toISOString()
     };
+    setActivities(prev => [newActivity, ...prev]);
 
+    logAudit('Lead qualified', `Owner ${owner.name} qualified as ${qualification.propertyStatus}`, id, 'Owner');
+  }, [owners, updateOwner, currentUser, logAudit]);
+
+  const addActivity = useCallback((actData: Omit<Activity, 'id' | 'createdAt'>): Activity => {
+    const newAct: Activity = {
+      ...actData,
+      id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      createdAt: new Date().toISOString()
+    };
     setActivities(prev => [newAct, ...prev]);
-
-    // Update owner's contact stats
-    setOwners(prev => prev.map(o => {
-      if (o.id === activityData.ownerId) {
-        return {
-          ...o,
-          lastContactDate: activityData.date,
-          lastContactOutcome: activityData.outcome,
-          contactAttempts: (o.contactAttempts || 0) + 1,
-          nextFollowUpDate: activityData.nextFollowUpDate || o.nextFollowUpDate,
-          firstContactDate: o.firstContactDate || activityData.date,
-          leadStatus: o.leadStatus === 'New' ? 'Contacted' : o.leadStatus,
-          updatedAt: new Date().toISOString().split('T')[0]
-        };
-      }
-      return o;
-    }));
-
-    // Auto schedule Follow-up Task if next date is specified
-    if (activityData.nextFollowUpDate) {
-      const targetOwner = owners.find(o => o.id === activityData.ownerId);
-      if (targetOwner) {
-        const newFollowUp: FollowUpTask = {
-          id: `fol-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          ownerId: targetOwner.id,
-          ownerName: targetOwner.name,
-          phone: targetOwner.primaryPhone,
-          project: targetOwner.project,
-          flatNumber: targetOwner.flatNumber,
-          date: activityData.nextFollowUpDate,
-          time: '11:00 AM',
-          type: 'Call',
-          assignedAgent: activityData.staff || targetOwner.assignedStaff,
-          notes: activityData.nextAction || activityData.notes,
-          status: 'Pending',
-          leadTemperature: targetOwner.leadTemperature,
-          saleIntent: targetOwner.saleIntent,
-          rentalIntent: targetOwner.rentalIntent,
-          createdAt: new Date().toISOString().split('T')[0]
-        };
-        setFollowUps(prev => [newFollowUp, ...prev]);
-      }
-    }
-
-    logAudit('Record created', `Logged ${activityData.type} for owner ID ${activityData.ownerId}`, activityData.ownerId, 'Owner');
     return newAct;
-  }, [owners, logAudit]);
+  }, []);
 
   const addFollowUp = useCallback((followUpData: Omit<FollowUpTask, 'id' | 'createdAt'>): FollowUpTask => {
-    const folId = `fol-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newFollowUp: FollowUpTask = {
       ...followUpData,
-      id: folId,
-      createdAt: new Date().toISOString().split('T')[0]
+      id: `fu-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      createdAt: new Date().toISOString()
     };
     setFollowUps(prev => [newFollowUp, ...prev]);
-
-    // Update owner's next follow up
-    setOwners(prev => prev.map(o => {
-      if (o.id === followUpData.ownerId) {
-        return {
-          ...o,
-          nextFollowUpDate: followUpData.date,
-          nextFollowUpTime: followUpData.time,
-          nextFollowUpType: followUpData.type,
-          nextFollowUpNotes: followUpData.notes
-        };
-      }
-      return o;
-    }));
-
     return newFollowUp;
   }, []);
 
@@ -500,46 +534,40 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const addProperty = useCallback((propData: Omit<Property, 'id'>): Property => {
-    const propId = `prop-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-    const newProp: Property = { ...propData, id: propId };
+    const newId = `prop-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const newProp: Property = { ...propData, id: newId };
     setProperties(prev => [newProp, ...prev]);
-    logAudit('Record created', `Added property ${newProp.project} ${newProp.flatNumber}`, propId, 'Property');
     return newProp;
-  }, [logAudit]);
+  }, []);
 
   const updateProperty = useCallback((id: string, updates: Partial<Property>) => {
     setProperties(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
-    logAudit('Record edited', `Updated property ${id}`, id, 'Property');
-  }, [logAudit]);
+  }, []);
 
   const addListing = useCallback((listingData: Omit<PropertyListing, 'id' | 'listingDate' | 'viewsCount' | 'enquiriesCount'>): PropertyListing => {
-    const lstId = `lst-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const newId = `list-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newListing: PropertyListing = {
       ...listingData,
-      id: lstId,
+      id: newId,
       listingDate: new Date().toISOString().split('T')[0],
       viewsCount: 0,
       enquiriesCount: 0
     };
     setListings(prev => [newListing, ...prev]);
-
-    // Sync listingId to owner
-    setOwners(prev => prev.map(o => o.id === listingData.ownerId ? { ...o, listingId: lstId, listingStatus: listingData.listingStatus } : o));
-    logAudit('Listing published', `Created listing ${newListing.listingTitle}`, lstId, 'Listing');
+    logAudit('Listing published', `Created listing: ${newListing.listingTitle}`, newId, 'Listing');
     return newListing;
   }, [logAudit]);
 
   const updateListing = useCallback((id: string, updates: Partial<PropertyListing>) => {
     setListings(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
-    logAudit('Record edited', `Updated listing ID ${id}`, id, 'Listing');
-  }, [logAudit]);
+  }, []);
 
   const addBuyer = useCallback((buyerData: Omit<Buyer, 'id' | 'createdAt' | 'updatedAt'>): Buyer => {
     const now = new Date().toISOString().split('T')[0];
     const newId = `buy-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newBuyer: Buyer = { ...buyerData, id: newId, createdAt: now, updatedAt: now };
     setBuyers(prev => [newBuyer, ...prev]);
-    logAudit('Record created', `Added buyer ${newBuyer.name}`, newId);
+    logAudit('Record created', `Added buyer requirement for ${newBuyer.name}`, newId);
     return newBuyer;
   }, [logAudit]);
 
@@ -608,7 +636,7 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setScoringRules(INITIAL_SCORING_RULES);
     setTemplates(INITIAL_TEMPLATES);
     setLastImportReport(null);
-    logAudit('Record created', 'Reset database to 20 fictional Prestige owners and pipeline demo state');
+    logAudit('Record created', 'Reset database to 20 fictional Prestige owners and benchmark pipeline state');
   }, [logAudit]);
 
   const clearAllData = useCallback(() => {
@@ -623,7 +651,7 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSaleLeads([]);
     setRentalLeads([]);
     setLastImportReport(null);
-    logAudit('Record deleted', 'Cleared all CRM owner records and pipeline data');
+    logAudit('Record deleted', 'Cleared all CRM records to clean slate (0 records)');
   }, [logAudit]);
 
   const updateScoringRule = useCallback((id: string, updates: Partial<ScoringRule>) => {
@@ -650,6 +678,7 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       rentalLeads,
       currentUser,
       users,
+      roles,
       scoringRules,
       templates,
       auditLogs,
@@ -681,6 +710,14 @@ export const CrmProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       importOwners,
       resetToDemoData,
       clearAllData,
+      addUser,
+      updateUser,
+      deleteUser,
+      addRole,
+      updateRole,
+      deleteRole,
+      getRoleById,
+      hasPermission,
       updateScoringRule,
       updateTemplate,
       setCurrentUser,
@@ -698,3 +735,4 @@ export const useCrm = () => {
   }
   return context;
 };
+

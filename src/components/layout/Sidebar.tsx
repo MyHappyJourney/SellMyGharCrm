@@ -17,7 +17,9 @@ import {
   Upload,
   Layers,
   FileSpreadsheet,
-  Settings
+  Settings,
+  ShieldCheck,
+  UserPlus
 } from 'lucide-react';
 import { useCrm } from '../../context/CrmContext';
 
@@ -81,8 +83,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       category: 'Management',
       items: [
         { id: 'analytics', label: 'Revenue Tracking', icon: DollarSign },
+        { id: 'users', label: 'Team & Users', icon: UserPlus },
+        { id: 'roles', label: 'Roles & RBAC', icon: ShieldCheck },
         { id: 'templates', label: 'Templates & Messages', icon: MessageSquareText },
-        { id: 'settings', label: 'Settings', icon: Settings }
+        { id: 'settings', label: 'Settings & Data Wipe', icon: Settings }
       ]
     }
   ];

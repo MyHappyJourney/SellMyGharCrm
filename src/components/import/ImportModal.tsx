@@ -33,7 +33,7 @@ interface ImportModalProps {
 }
 
 export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose }) => {
-  const { owners, importOwners, logAudit } = useCrm();
+  const { owners, importOwners, clearAllData, logAudit } = useCrm();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -46,6 +46,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose }) => 
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [importReport, setImportReport] = useState<ImportSummaryReport | null>(null);
   const [dragActive, setDragActive] = useState<boolean>(false);
+  const [wipeExistingBeforeImport, setWipeExistingBeforeImport] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
@@ -129,11 +130,13 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose }) => 
       const existingEmailSet = new Set<string>();
       const existingFlatSet = new Set<string>();
 
-      owners.forEach(o => {
-        if (o.primaryPhone) existingPhoneSet.add(o.primaryPhone.replace(/\D/g, '').slice(-10));
-        if (o.email) existingEmailSet.add(o.email.toLowerCase());
-        if (o.flatNumber && o.project) existingFlatSet.add(`${o.project.toLowerCase()}:::${o.flatNumber.toLowerCase()}`);
-      });
+      if (!wipeExistingBeforeImport) {
+        owners.forEach(o => {
+          if (o.primaryPhone) existingPhoneSet.add(o.primaryPhone.replace(/\D/g, '').slice(-10));
+          if (o.email) existingEmailSet.add(o.email.toLowerCase());
+          if (o.flatNumber && o.project) existingFlatSet.add(`${o.project.toLowerCase()}:::${o.flatNumber.toLowerCase()}`);
+        });
+      }
 
       const newOwners: Owner[] = [];
       let duplicateCount = 0;
@@ -153,7 +156,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose }) => 
         if (!rawFlat) missingFlatCount++;
         if (!phoneDigits || phoneDigits.length < 10) invalidPhonesCount++;
 
-        const isDuplicate = phoneDigits && existingPhoneSet.has(phoneDigits);
+        const isDuplicate = !wipeExistingBeforeImport && phoneDigits && existingPhoneSet.has(phoneDigits);
 
         if (isDuplicate) {
           duplicateCount++;
@@ -178,6 +181,10 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose }) => 
         missingMandatoryFields: missingFlatCount,
         importDate: new Date().toISOString().split('T')[0]
       };
+
+      if (wipeExistingBeforeImport) {
+        clearAllData();
+      }
 
       setImportReport(report);
       importOwners(newOwners, report);
@@ -204,7 +211,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose }) => 
         {/* Modal Header */}
         <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="h-9 w-9 rounded-lg bg-amber-500 flex items-center justify-center text-slate-950 font-bold">
+            <div className="h-9 w-9 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold">
               <FileSpreadsheet className="h-5 w-5" />
             </div>
             <div>
@@ -222,18 +229,18 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose }) => 
 
         {/* Progress Stepper Bar */}
         <div className="bg-slate-50 px-6 py-3 border-b border-slate-200 flex items-center justify-between text-xs font-semibold">
-          <div className={`flex items-center space-x-2 ${step >= 1 ? 'text-amber-700' : 'text-slate-400'}`}>
-            <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${step >= 1 ? 'bg-amber-600 text-white' : 'bg-slate-200 text-slate-600'}`}>1</span>
+          <div className={`flex items-center space-x-2 ${step >= 1 ? 'text-blue-700' : 'text-slate-400'}`}>
+            <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${step >= 1 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'}`}>1</span>
             <span>Upload File</span>
           </div>
           <div className="h-0.5 w-12 bg-slate-200"></div>
-          <div className={`flex items-center space-x-2 ${step >= 2 ? 'text-amber-700' : 'text-slate-400'}`}>
-            <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${step >= 2 ? 'bg-amber-600 text-white' : 'bg-slate-200 text-slate-600'}`}>2</span>
+          <div className={`flex items-center space-x-2 ${step >= 2 ? 'text-blue-700' : 'text-slate-400'}`}>
+            <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${step >= 2 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'}`}>2</span>
             <span>Column Mapping</span>
           </div>
           <div className="h-0.5 w-12 bg-slate-200"></div>
-          <div className={`flex items-center space-x-2 ${step >= 3 ? 'text-amber-700' : 'text-slate-400'}`}>
-            <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${step >= 3 ? 'bg-amber-600 text-white' : 'bg-slate-200 text-slate-600'}`}>3</span>
+          <div className={`flex items-center space-x-2 ${step >= 3 ? 'text-blue-700' : 'text-slate-400'}`}>
+            <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${step >= 3 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'}`}>3</span>
             <span>Duplicate Strategy</span>
           </div>
           <div className="h-0.5 w-12 bg-slate-200"></div>
@@ -247,17 +254,43 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose }) => 
         <div className="flex-1 overflow-y-auto p-6">
           {/* STEP 1: File Upload */}
           {step === 1 && (
-            <div className="space-y-6">
+            <div className="space-y-4">
+              {/* Existing Database Status & Wipe Banner */}
+              {owners.length > 0 && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center space-x-2.5">
+                    <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                    <div>
+                      <p className="font-bold text-amber-950">Database currently contains {owners.length} records</p>
+                      <p className="text-[11px] text-amber-800">Clear existing sample records before importing your clean file, or merge them.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm('Clear current records now?')) {
+                          clearAllData();
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs"
+                    >
+                      Clear Existing Data Now
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div
                 onDragEnter={handleDrag}
                 onDragLeave={handleDrag}
                 onDragOver={handleDrag}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all ${
+                className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${
                   dragActive 
-                    ? 'border-amber-600 bg-amber-50/50 scale-[1.01]' 
-                    : 'border-slate-300 hover:border-amber-500 hover:bg-slate-50'
+                    ? 'border-blue-600 bg-blue-50/50 scale-[1.01]' 
+                    : 'border-slate-300 hover:border-blue-500 hover:bg-slate-50'
                 }`}
               >
                 <input
@@ -267,38 +300,53 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose }) => 
                   onChange={handleFileInput}
                   className="hidden"
                 />
-                <div className="h-16 w-16 mx-auto rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mb-4">
-                  <Upload className="h-8 w-8" />
+                <div className="h-14 w-14 mx-auto rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3 border border-blue-100 shadow-2xs">
+                  <Upload className="h-7 w-7" />
                 </div>
                 <h3 className="text-base font-bold text-slate-900">
                   Click to browse or drop your Excel / CSV file here
                 </h3>
-                <p className="text-xs text-slate-500 mt-1.5 max-w-md mx-auto">
-                  Supports .xlsx, .xls, and .csv files with up to 10,000 rows. No manual restructuring needed.
+                <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                  Supports .xlsx, .xls, and .csv files with up to 10,000 rows. Auto-detects columns.
                 </p>
-                <div className="mt-4 flex items-center justify-center space-x-2 text-xs text-slate-400">
-                  <span>Columns matched:</span>
-                  <span className="font-mono text-slate-600 font-bold">Name, Co-Owner, Flat No, Block, Contact Number, Alternate 1-5, Email Id</span>
+                <div className="mt-4 p-2.5 bg-slate-100/80 rounded-xl max-w-xl mx-auto text-[11px] text-slate-600 border border-slate-200">
+                  <span className="font-semibold text-slate-800">Auto-detected Columns:</span>{' '}
+                  <span className="font-mono text-blue-900 font-medium">Name | Co - Owner | Flat No. | Block | Contact Number | Alternate 1-5 | Email Id</span>
                 </div>
               </div>
 
+              {/* Wipe on Import Checkbox */}
+              {owners.length > 0 && (
+                <label className="flex items-center space-x-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors text-xs">
+                  <input
+                    type="checkbox"
+                    checked={wipeExistingBeforeImport}
+                    onChange={(e) => setWipeExistingBeforeImport(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="font-semibold text-slate-800">
+                    Replace and erase current records upon successful import
+                  </span>
+                </label>
+              )}
+
               {/* Sample Template Helper */}
-              <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl flex items-center justify-between">
+              <div className="p-3.5 bg-blue-50/60 border border-blue-200/70 rounded-xl flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className="p-2 bg-amber-200/70 text-amber-900 rounded-lg">
-                    <Download className="h-5 w-5" />
+                  <div className="p-2 bg-blue-100 text-blue-800 rounded-lg">
+                    <Download className="h-4 w-4" />
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-amber-950">Want to test with sample Prestige data?</p>
-                    <p className="text-[11px] text-amber-800">Download our sample 30-owner Excel template with realistic Bengaluru Prestige records.</p>
+                    <p className="text-xs font-bold text-slate-900">Need a reference Excel template?</p>
+                    <p className="text-[11px] text-slate-500">Download our sample 30-owner Excel template with the exact Prestige column layout.</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={handleDownloadSample}
-                  className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-colors shadow-2xs"
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors shadow-2xs"
                 >
-                  Download Sample Excel
+                  Download Sample
                 </button>
               </div>
             </div>
@@ -354,7 +402,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose }) => 
                             <select
                               value={m.crmField}
                               onChange={(e) => handleMappingChange(m.csvHeader, e.target.value)}
-                              className="w-full text-xs font-medium py-1.5 px-2.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                              className="w-full text-xs font-medium py-1.5 px-2.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
                             >
                               <option value="ignore">❌ Ignore Column</option>
                               {Object.entries(FIELD_KEYWORDS).map(([fieldKey, config]) => (
@@ -565,7 +613,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose }) => 
               <button
                 onClick={proceedToDuplicateCheck}
                 disabled={isProcessing}
-                className="inline-flex items-center space-x-2 px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-all shadow-xs"
+                className="inline-flex items-center space-x-2 px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all shadow-xs"
               >
                 <span>Continue to Duplicates</span>
                 <ArrowRight className="h-3.5 w-3.5" />
