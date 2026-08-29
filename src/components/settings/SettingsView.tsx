@@ -68,12 +68,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ initialTab = 'users'
     setIsTestingDb(true);
     setTestResult(null);
     try {
+      const uriToTest = customUri || testUriInput.trim() || undefined;
       const res = await fetch('/api/db/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uri: customUri || testUriInput || undefined })
+        body: JSON.stringify({ uri: uriToTest })
       });
-      const data = await res.json();
+
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (jsonErr) {
+        throw new Error(`Server returned status ${res.status}: ${text.slice(0, 120)}`);
+      }
+
       setTestResult(data);
       if (data.success) {
         await refreshDbStatus();
@@ -82,9 +91,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ initialTab = 'users'
     } catch (err: any) {
       setTestResult({
         success: false,
-        hasMongoUri: true,
-        message: 'Could not reach database test endpoint',
-        details: err.message
+        hasMongoUri: false,
+        message: 'Could not connect to database',
+        details: err.message?.includes('status') 
+          ? err.message 
+          : `${err.message}. Please verify MONGODB_URI in your environment settings and check that IP 0.0.0.0/0 is allowed in MongoDB Atlas Network Access.`
       });
     } finally {
       setIsTestingDb(false);
@@ -385,20 +396,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ initialTab = 'users'
 
             {/* MongoDB Connection Instructions & Live Diagnostic Tester */}
             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
                 <div className="flex items-center space-x-2 text-slate-900 font-bold text-sm">
                   <KeyRound className="h-4 w-4 text-blue-600" />
                   <span>MongoDB Atlas Configuration & Live Diagnostics</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => runTestConnection()}
-                  disabled={isTestingDb}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[11px] flex items-center space-x-1.5 transition-colors disabled:opacity-50 self-start sm:self-auto cursor-pointer"
-                >
-                  <RefreshCw className={`h-3 w-3 ${isTestingDb ? 'animate-spin' : ''}`} />
-                  <span>{isTestingDb ? 'Testing Connection...' : 'Test Current MongoDB Connection'}</span>
-                </button>
+              </div>
+
+              {/* Direct URI Test Bar */}
+              <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Test or Verify MongoDB Connection URI:
+                </label>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="password"
+                    value={testUriInput}
+                    onChange={(e) => setTestUriInput(e.target.value)}
+                    placeholder="mongodb+srv://<username>:<password>@cluster0.abcde.mongodb.net/?retryWrites=true&w=majority"
+                    className="flex-1 px-3 py-2 text-xs rounded-lg border border-slate-300 font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none bg-slate-50 text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => runTestConnection(testUriInput)}
+                    disabled={isTestingDb}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs flex items-center justify-center space-x-1.5 transition-colors disabled:opacity-50 cursor-pointer shrink-0"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${isTestingDb ? 'animate-spin' : ''}`} />
+                    <span>{isTestingDb ? 'Testing...' : (testUriInput ? 'Test This URI' : 'Test Active Connection')}</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Leave blank to test your current server environment configuration, or paste a new URI to verify credentials before saving.
+                </p>
               </div>
 
               {/* Diagnostic Test Result Box */}
